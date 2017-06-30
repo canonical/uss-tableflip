@@ -60,6 +60,3 @@ for s in $items; do
    systemctl cat "$s" > "$out_d"/systemctl-"$s" 2>&1 || :
    systemctl list-dependencies "$s" > "$out_d"/systemctl-list-dependencies-"$s" 2>&1 || :
 done
-
-"${0%/*}/summary" "$out_d" > "$out_d/summary" 2>&1 || :
-cat "$out_d/summary"
