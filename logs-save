@@ -1,0 +1,65 @@
+#!/bin/sh
+# Save all logs.
+#
+# Copyright 2017 Canonical Ltd.
+# Scott Moser <scott.moser@canonical.com>
+# Joshua Powers <josh.powers@canonical.com>
+
+export LANG=C
+
+[ -n "$1" ] || { echo need dir; exit 1; }
+[ "$(id -u)" = "0" ] || { echo "not root"; exit 1; }
+
+set -e
+
+out_d=$1
+rm -Rf "$out_d"
+mkdir -p "$out_d"/logs "$out_d"/network/eni "$out_d"/ssh
+rsync -a /var/lib/cloud/ "$out_d"/var_lib_cloud
+rsync -a /run/cloud-init/ "$out_d"/run_cloud_init
+cp /var/log/cloud-* "$out_d"/logs
+cp /etc/network/interfaces "$out_d"/network/eni
+cp -a /etc/network/interfaces.d "$out_d"/network/eni
+dpkg-query --show > "$out_d"/package-manifest
+cp /etc/cloud/ -r "$out_d"/etc-cloud
+cp /etc/ssh/ssh_host_*.pub "$out_d"/ssh
+apt-cache policy cloud-init > "$out_d"/apt-policy-cloud-init
+
+cp /etc/fstab "$out_d"/etc-fstab
+cp /proc/swaps "$out_d"/proc-swaps
+cp /proc/mounts "$out_d"/proc-mounts
+if [ -e /etc/cloud/build.info ]; then
+   cp /etc/cloud/build.info "$out_d/build.info"
+fi
+
+free > "$out_d/free.out"
+blkid > "$out_d/blkid.out"
+mount > "$out_d/mount.out"
+
+systemctl list-dependencies > "$out_d"/systemctl-list-dependencies.out
+
+find /run/systemd -type f > "$out_d"/systemd-run.list
+find /run/systemd -type f -print0 |
+   xargs -0 ls -altr --full-time > "$out_d"/systemd-run-ls.txt
+journalctl -o short-monotonic > "$out_d"/journalctl-short-monotonic
+journalctl -o short-precise > "$out_d"/journalctl-short-precise
+systemctl --all --no-pager > "$out_d"/systemctl-all
+
+items="
+  cloud-config.service
+  cloud-final.service
+  cloud-init.service
+  cloud-init.target
+  cloud-init-local.service
+  mnt.mount
+  multi-user.target
+"
+for s in $items; do
+   systemctl show --no-pager --full "$s" > "$out_d"/systemctl-show-"$s" 2>&1 || :
+   systemctl status --no-pager --full "$s" > "$out_d"/systemctl-status-"$s" 2>&1 || :
+   systemctl cat "$s" > "$out_d"/systemctl-"$s" 2>&1 || :
+   systemctl list-dependencies "$s" > "$out_d"/systemctl-list-dependencies-"$s" 2>&1 || :
+done
+
+"${0%/*}/summary" "$out_d" > "$out_d/summary" 2>&1 || :
+cat "$out_d/summary"

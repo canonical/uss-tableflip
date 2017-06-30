@@ -1,0 +1,16 @@
+#!/bin/sh
+# Collect and pastebinit basic set of logs.
+#
+# Copyright 2017 Canonical Ltd.
+# Joshua Powers <josh.powers@canonical.com>
+
+if [ ! -e /var/lib/cloud/instance/boot-finished ]; then
+	echo "Boot NOT finished!"
+    exit 1
+fi
+
+cat /var/lib/cloud/data/result.json
+
+pastebinit /var/lib/cloud/data/result.json
+pastebinit /var/log/cloud-init.log
+pastebinit /var/log/cloud-init-output.log
