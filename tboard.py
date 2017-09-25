@@ -1,3 +1,5 @@
+#!/usr/bin/python
+# Didn't sort python3 string encoding yet
 # Author Chad Smith <chad.smith@canonical.com>
 
 """trello-report: Query and report trello card info from your boards."""
@@ -7,11 +9,19 @@
 # TRELLO_API_KEY='<key>' TRELLO_API_SECRET='<secret>' python tboard.py
 # It will store oauth responses in in CREDS_FILE for reference next run
 
+
+# Example call python /tboard.py --board-name 'Daily Cloud-init/curtin' --list-name 'Done' --label-name cloud-init
+
 import argparse
 import json
 import os
-from trello import TrelloClient
-from trello.util import create_oauth_token
+try:
+    from trello import TrelloClient
+    from trello.util import create_oauth_token
+except ImportError:
+    raise RuntimeError(
+        'Missing py-trello package:\n'
+        'sudo apt install python-pip; sudo pip install py-trello')
 
 # Add this prefix card comment to set the publishable markdown content,
 # If no doc-comment present, we'll try to use card description or title(name).
@@ -106,6 +116,13 @@ def get_trello_client():
         with open(CREDS_FILE) as stream:
             creds = json.loads(stream.read())
     else:
+        if not all([
+            os.environ.get('TRELLO_API_KEY'),
+            os.environ.get('TRELLO_API_SECRET')]):
+            raise RuntimeError(
+                'Missing either TRELLO_API_KEY or TRELLO_API_SECRET for'
+                ' initialization.\nThey can both be found at'
+                ' https://trello.com/app-key')
         creds = {'api_key': os.environ.get('TRELLO_API_KEY'),
                  'api_secret': os.environ.get('TRELLO_API_SECRET')}
 
