@@ -1,0 +1,101 @@
+#!/usr/bin/python3
+"""Mark the provided launchpad bugs as fix-released.
+
+Update the bug with a comment.
+"""
+
+import argparse
+import sys
+import textwrap
+from launchpadlib.launchpad import Launchpad
+
+def main():
+    parser = argparse.ArgumentParser()
+
+    subject_tmpl  = "Fixed in Cloud-init {version}"
+    comment_tmpl = ("This bug is believed to be fixed in cloud-init in "
+        "{version}. If this is still a problem for you, please make a "
+        "comment and set the state back to New\n\nThank you.")
+
+    parser.add_argument('--comment', action='store', default=comment_tmpl,
+                        help='comment on the bug with this message',
+                        dest='comment_tmpl')
+    parser.add_argument('--subject', action='store', default=subject_tmpl,
+                        help='The subject of the comment',
+                        dest='subject_tmpl')
+    parser.add_argument('--dry-run', action='store_true', default=False,
+                        help='only report what would be done')
+    parser.add_argument('version', action='store', default=None,
+                        help='The version this is fixed in.')
+    parser.add_argument('bugs', action='store', default=None,
+                        nargs='+', help='The bugs to mark fix-released.')
+
+    args = parser.parse_args()
+
+    if args.dry_run:
+        sys.stderr.write("not implemented\n")
+        sys.exit(1)
+
+    lp = Launchpad.login_with("cloud-init fix-released", 'production',
+                              version='devel')
+
+    project_name = 'cloud-init'
+    lp_project = lp.projects(project_name)
+    project_url = lp_project.web_link
+    bug_url = 'https://bugs.launchpad.net/cloud-init/+bug/'
+
+    data = {'version': args.version}
+    if comment_tmpl:
+        comment = args.comment_tmpl.format(**data)
+    else:
+        comment = None
+
+    if subject_tmpl:
+        subject = args.subject_tmpl.format(**data)
+    else:
+        subject = None
+
+
+    if subject and not comment:
+        sys.stderr.write("Cannot set subject and not comment.\n")
+        sys.exit(1)
+
+    tasks = []
+    missing = []
+    buginfo = []
+    for bug_num in args.bugs:
+        found = None
+        bug = lp.bugs[bug_num]
+        info = {'task': None, 'bug': bug, 'num': bug_num}
+        for task in bug.bug_tasks:
+            if task.bug_target_name == project_name:
+                info['task'] = task
+                break
+        buginfo.append(info)
+
+
+    missing = [i['num'] for i in buginfo if i['task'] is None]
+    if missing:
+        print("missing tasks for: %s" % ' '.join(missing))
+
+    fix_released = 'Fix Released'
+    print("buginfo: %s" % buginfo)
+    for info in buginfo:
+        print("bug %s" % info['num'])
+        task = info['task']
+        if not task:
+            print("no bug task for upstream")
+            continue
+        bug = info['bug']
+        if task.status == fix_released:
+            print("%s: already fix released\n" % info['num'])
+            continue
+        task.status = fix_released
+        task.lp_save()
+        if comment:
+            bug.newMessage(subject=subject, content=comment)
+            print("subject=%s" % subject)
+
+
+if __name__ == '__main__':
+    main()
