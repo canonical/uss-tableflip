@@ -1,0 +1,116 @@
+#!/bin/sh
+
+error() { echo "$@" 1>&2; }
+Usage() {
+    cat <<EOF
+Usage: ${0##*/} release
+
+   release is like 'xenial' or 'artful'.
+
+    - Downloads an image from cloud-image.ubuntu.com
+    - converts it to raw format (from qcow2)
+    - creates a -proposed image using the original as a qcow2 backing.
+      - updates cloud-init inside.
+EOF
+}
+
+sstream_check() {
+   local kpath="/usr/share/keyrings/ubuntu-cloudimage-keyring.gpg"
+   command -v sstream-query >/dev/null 2>&1 || return
+   if [ -f "$f" ]; then
+      KEYRING="--keyring=$kpath"
+   else
+      # is it in the default keyring?
+      local fprint="4A3CE3CD565D7EB5C810E2B97FF3F408476CF100"
+      command -v gpg >/dev/null 2>&1 &&
+         gpg --list-public-keys | grep -q "$fprint" &&
+         KEYRING="" && return 0
+   fi
+   return 1
+}
+sstream_get_image() {
+   local rel="$1" output="$2" ftype="${3:-disk1.img}"
+   local url="http://cloud-images.ubuntu.com/daily/"
+   local arch="amd64"
+   local ofmt="%(release)s %(version_name)s %(ftype)s %(sha256)s %(item_url)s"
+   local out=""
+   out=$(sstream-query ${KEYRING:+"--keyring=${KEYRING}"} \
+      --max=1 "--output-format=$ofmt" \
+      "$url" "datatype=image-downloads" \
+      "ftype=$ftype" "release=$rel" arch="$arch") ||
+      { error "sstream-query failed."; return 1; }
+   local rrel version ftype sha256 url sha256r
+   set -- $out
+   [ $# -eq 5 ] || {
+      error "too many fields returned in query (multiple results?): $out";
+      return 1;
+   }
+   rrel="$1"; version="$2"; ftype="$3"; sha256="$4"; url="$5"
+   error "Downloading $rel/$version/$ftype from $url."
+   wget --progress=dot:mega "$url" -O "$output.tmp" &&
+      out=$(sha256sum "$output.tmp") && sha256r="${out%  *}" || {
+         rm -f "$output.tmp"
+         error "download failed: $url"
+         return 1
+      }
+   [ "${sha256r}" = "$sha256" ] || {
+      rm -f "$output.tmp"
+      error "hashsum mismatch (found=$sha256r expected=$sha256)"
+      return 1
+   }
+   mv "$output.tmp" "$output"
+}
+
+rel="$1"
+[ "$1" = "-h" -o "$1" = "--help" ] && { Usage; exit 0; }
+[ -n "$rel" ] || { Usage 1>&2; error "Must give release"; exit 1; }
+
+arch="amd64"
+burl="http://cloud-images.ubuntu.com/daily/server"
+fname=$rel-server-cloudimg-amd64.img
+ofname="$fname"
+ftype="disk1.img"
+case "$rel" in
+    xenial) ftype="uefi1.img";;
+esac
+case "$rel" in
+    precise|trusty|xenial) suff="-$ftype";;
+    *) suff=".img";;
+esac
+ofname="$rel-server-cloudimg-amd64${suff}"
+
+pfname="${fname%.img}-proposed.img"
+raw="${fname%.img}.raw"
+if [ ! -f "$fname" ]; then
+   if sstream_check; then
+      error "getting image via simplestreams."
+      sstream_get_image "$rel" "$fname" "$ftype" || exit
+   else
+      wget "$burl/$rel/current/$ofname" -O "$fname.tmp" &&
+          mv "$fname.tmp" "$fname" || exit
+   fi
+   rm -f "$raw"
+fi
+if [ ! -f "$raw" ]; then
+   qemu-img convert -O raw "$fname" "$raw.tmp" &&
+       mv "$raw.tmp" "$raw" || exit
+   rm -f "$pfname"
+fi
+if [ ! -f "$pfname" ]; then
+    qemu-img create -f qcow2 -b "$raw" "$pfname.tmp" || break
+    sudo mount-image-callback --system-resolvconf "$pfname.tmp" -- \
+        mchroot sh -ec '
+            r=$(lsb_release -sc)
+            m="http://archive.ubuntu.com/ubuntu"
+            plist="/etc/apt/sources.list.d/proposed.list"
+            echo "deb $m $r-proposed main" > "$plist"
+            apt-get update -q
+            DEBIAN_FRONTEND=noninteractive apt-get -qy install cloud-init
+        ' </dev/null || exit
+    mv $pfname.tmp $pfname
+    echo "wrote $pfname"
+else
+    echo "re-used $pfname"
+fi
+
+# vi: ts=4 expandtab
