@@ -53,7 +53,7 @@ EC2_REGIONS = (
 # See also http://boto3.readthedocs.io/en/latest/reference/services/ec2.html#EC2.ServiceResource.create_instances
 CREATE_INSTANCE_DEFAULTS = {
     'ImageId': 'ami-FIXME',  # Must be set by our request
-    'KeyName': 'ubuntu',
+    'KeyName': 'ubuntu',  # XXX Need to create/provide ssh key name
     'InstanceType': 't2.micro',
     'SecurityGroups': ['FIXME'],
     #Ipv6AddressCount=123,
@@ -87,6 +87,14 @@ class EC2Instance(object):
         """
         self.instance = instance
         self.artifact_dir = artifact_dir
+
+
+    def scp(self, source_path, dest_path):
+        """Scp files or dirs to an instance."""
+        hostname = self.instance.meta.data['PublicDnsName']
+        check_output(
+            ['scp', '-i', '~/Downloads/ubuntu.pem', '-o',
+             'StrictHostKeyChecking=no', source_path, dest_path])
 
     def runcmd(self, command, pipe_in=None, pipe_out=False):
         """Run a command over ssh on the instance.
@@ -222,6 +230,12 @@ def get_parser():
         help=('Specify a local directory where results of script output'
               ' artifacts are saved'))
     parser.add_argument(
+        '-k', '--keep-alive', action='store_true', default=False,
+        dest='keep_alive', help='Leave the instance running after test.')
+    parser.add_argument(
+        '-p', '--proposed', action='store_true', default=False,
+        help='Update instance cloud-init to the version in <series>-proposed.')
+    parser.add_argument(
         '-r', '--region', type=str, choices=EC2_REGIONS,
         default=DEFAULT_REGION,
         help='Specify a region to deploy to [default=%s]' % DEFAULT_REGION)
@@ -289,59 +303,6 @@ def ec2_instance_scp(instance, source_path, dest_path):
     out = check_output(['scp', '-i', '~/Downloads/ubuntu.pem', '-o', 'StrictHostKeyChecking=no', source_path, dest_path])
 
 
-def ec2_instance_run_scripts(instance, scripts_dir, artifacts_dir):
-    """Push scripts directory to the instance, run them and return artifacts.
-
-    Provide SCRIPT_ARTIFACT_DIR env variable to scripts and copy any files in
-    remote SCRIPT_ARTIFACT_DIR into local artifacts_dir.
-
-    @param instance: ec2 cli instance object.
-    @param scripts_dir: Local path to a scripts directory which contains
-        executable scripts which can be run by run-parts on the instance.
-    @param artifacts_dir: Local path where script artifacts/results will be
-        copied.
-    """
-    local_cmd = ['tar', '-czf', '-', scripts_dir]
-    remote_artifact_basename = os.path.basename(REMOTE_ARTIFACT_DIR)
-
-    # Untar scripts_dir, run-parts scripts_dir, tar up REMOTE_ARTIFACT_DIR
-    remote_cmds = [
-        'tar xzf - -C /tmp',
-        'mkdir -p {0}'.format(REMOTE_ARTIFACT_DIR),
-        'SCRIPT_ARTIFACT_DIR={0} run-parts /tmp/{1}'.format(
-            REMOTE_ARTIFACT_DIR, scripts_dir),
-        'tar -czf - -C /tmp {}'.format(remote_artifact_basename)]
-
-    proc1 = Popen(local_cmd, stdout=PIPE)  # Tar up local scripts_dir
-    # Perform all remote_cmds in a single ssh interaction.
-    proc2 = ec2_instance_runcmd(
-        instance, '; '.join(remote_cmds), pipe_in=proc1, pipe_out=True)
-    # Untar REMOTE_ARTIFACT_DIR locally
-    proc3 = Popen(['tar', '-xzf', '-'], stdin=proc2.stdout, stdout=PIPE)
-    proc2.stdout.close()
-    out, err = proc3.communicate()
-    # Move the remote_artifacts dirname to local artifacts_dir
-    shutil.move(remote_artifact_basename, artifacts_dir)
-
-
-def ec2_instance_runcmd(instance, command, pipe_in=None, pipe_out=False):
-    """Run a directory or scripts on an ec2_instance sync results_dir"""
-    hostname = instance.meta.data['PublicDnsName']
-    stdin = None
-    if pipe_in:
-        stdin = pipe_in.stdout
-    ssh_cmd = [
-        'ssh', '-i', '~/Downloads/ubuntu.pem', '-o', 'StrictHostKeyChecking=no',
-        'ubuntu@{}'.format(hostname), '--']
-    proc = Popen(ssh_cmd + [command], stdin=stdin, stdout=PIPE)
-    if pipe_in:
-        pipe_in.stdout.close()  # Allow p1 to receive SIGPIPE if p2 exits
-    if pipe_out:
-        return proc  # Caller needs to communicate and close
-    out, err = proc.communicate()
-    return out.strip()
-
-
 def main():
     parser = get_parser()
     args = parser.parse_args()
@@ -352,10 +313,10 @@ def main():
         image_id = get_ec2_image_id(args.series, args.region)
     instance = ec2_create_instance(ec2_client, image_id, args.user_data_file)
     ec2_instance = EC2Instance(instance)
-    import pdb; pdb.set_trace()
     if args.script_dir:
         ec2_instance.run_scripts(args.script_dir, args.artifacts_dir)
-    ec2_instance.destroy()
+    if not args.keep_alive:
+        ec2_instance.destroy()
     return 0
 
 if __name__ == "__main__":
