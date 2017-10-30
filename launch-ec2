@@ -1,0 +1,362 @@
+#!/usr/bin/env python3
+'''Launch an instance on ec2 to test cloud-init'''
+
+try:
+    from argparse import ArgumentParser
+except ImportError:
+    raise RuntimeError(
+        'Could not import argparse. Please install python-argparse '
+        'package to continue')
+try:
+    import boto3
+    from botocore.exceptions import ClientError
+except ImportError:
+    raise RuntimeError(
+        'Could not import boto3. Please install python3-boto3 '
+        'package to continue')
+
+import os
+import re
+import shutil
+from subprocess import (
+    CalledProcessError, PIPE, Popen, check_output, check_call)
+import sys
+
+DEFAULT_REGION = 'us-east-2'
+DEFAULT_AVAILABILITY_ZONE = 'b'
+DEFAULT_SERIES = 'xenial'
+SECGROUP_NAME = 'Cloud-init integration test secgroup'
+SECGROUP_DESCRIPTION = 'Security group setting ssh ingress to instances'
+
+
+# Directory where script artifacts can be saved for sync
+DEFAULT_LOCAL_ARTIFACT_DIR = 'test-artifacts'
+REMOTE_ARTIFACT_DIR = '/tmp/cloud-init-script-artifacts'
+
+EC2_REGIONS = (
+    'ap-northeast-1',
+    'ap-northeast-2',
+    'ap-south-1',
+    'ap-southeast-1',
+    'ap-southeast-2',
+    'ca-central-1',
+    'eu-central-1',
+    'eu-west-1',
+    'eu-west-2',
+    'sa-east-1',
+    'us-east-1',
+    'us-east-2',
+    'us-west-1',
+    'us-west-2')
+
+
+# See also http://boto3.readthedocs.io/en/latest/reference/services/ec2.html#EC2.ServiceResource.create_instances
+CREATE_INSTANCE_DEFAULTS = {
+    'ImageId': 'ami-FIXME',  # Must be set by our request
+    'KeyName': 'ubuntu',
+    'InstanceType': 't2.micro',
+    'SecurityGroups': ['FIXME'],
+    #Ipv6AddressCount=123,
+    'MaxCount': 1,  # Deploy 1 instance of this type
+    'MinCount': 1,
+    'Monitoring': {
+        'Enabled': False
+    },
+    'Placement': {
+        'AvailabilityZone': '{}{}'.format(
+            DEFAULT_REGION, DEFAULT_AVAILABILITY_ZONE),
+    },
+    'DisableApiTermination': False,
+    'EbsOptimized': False,
+    'InstanceInitiatedShutdownBehavior': 'stop'
+}
+
+class EC2Instance(object):
+    """Wrapper around a boto ec2 instance providing methods for testing.
+
+    Methods provided simplify integration tests and validation.
+    """
+
+    def __init__(self, instance, artifact_dir=REMOTE_ARTIFACT_DIR):
+        """Initialize this EC2Instance helper class.
+
+        @param instance: ec2 boto3 instance object.
+        @param artifact_dir: The remote directory in which script results can
+            be stored.  This value is provided via runcmd as an environemnt
+            variable $SCRIPT_ARTIFACT_DIR.
+        """
+        self.instance = instance
+        self.artifact_dir = artifact_dir
+
+    def runcmd(self, command, pipe_in=None, pipe_out=False):
+        """Run a command over ssh on the instance.
+
+        @param command: The string of command(s) to execute on the remote
+            instance.
+        @param pipe_in: Optional Popen process to take as stdin to the command.
+        @param pipe_out: Optionally, whether to return the popen process
+            spawned to allow subprocess.PIPEs to use the stdout of the command.
+        """
+        hostname = self.instance.meta.data['PublicDnsName']
+        stdin = None
+        if pipe_in:
+            stdin = pipe_in.stdout
+        ssh_cmd = [
+            'ssh', '-i', '~/Downloads/ubuntu.pem', '-o',
+            'StrictHostKeyChecking=no', 'ubuntu@{}'.format(hostname), '--']
+        proc = Popen(ssh_cmd + [command], stdin=stdin, stdout=PIPE)
+        if pipe_in:
+            pipe_in.stdout.close()  # Allow p1 to receive SIGPIPE if p2 exits
+        if pipe_out:
+            return proc  # Caller needs to communicate and close
+        return proc.communicate()
+
+    def run_scripts(self, scripts_dir, artifacts_dir):
+        """Push scripts_dir to the instance, run them and return artifacts.
+
+        Provide SCRIPT_ARTIFACT_DIR env variable to scripts and copy any files
+        in remote SCRIPT_ARTIFACT_DIR into local artifacts_dir.
+
+        @param scripts_dir: Local path to a scripts directory which contains
+            executable scripts which can be run by run-parts on the instance.
+        @param artifacts_dir: Local path where script artifacts/results will be
+            copied.
+        """
+        local_cmd = ['tar', '-czf', '-', scripts_dir]
+        remote_artifact_basename = os.path.basename(self.artifact_dir)
+
+        # Untar scripts_dir, run-parts scripts_dir, tar up self.artifact_dir
+        remote_cmds = [
+            'tar xzf - -C /tmp',
+            'mkdir -p {0}'.format(self.artifact_dir),
+            'SCRIPT_ARTIFACT_DIR={0} run-parts /tmp/{1}'.format(
+                self.artifact_dir, scripts_dir),
+            'tar -czf - -C /tmp {}'.format(remote_artifact_basename)]
+
+        proc1 = Popen(local_cmd, stdout=PIPE)  # Tar up local scripts_dir
+        # Perform all remote_cmds in a single ssh interaction.
+        proc2 = self.runcmd(
+            '; '.join(remote_cmds), pipe_in=proc1, pipe_out=True)
+        # Untar self.artifact_dir locally
+        proc3 = Popen(['tar', '-xzf', '-'], stdin=proc2.stdout, stdout=PIPE)
+        proc2.stdout.close()
+        out, err = proc3.communicate()
+        # Move the remote_artifacts dirname to local artifacts_dir
+        shutil.move(remote_artifact_basename, artifacts_dir)
+
+    def update_proposed_cloud_init(self):
+        """Update cloud-init package to the version present in proposed."""
+        match = re.match(
+            r'.*ubuntu-(?P<series>[^-]*).*', self.instance.image.name)
+        if not match:
+            raise RuntimeError(
+                'Could not determine ubuntu series from image: {}'.format(
+                    self.instance.image.name))
+        series = match.group('series')
+        self.runcmd(
+            "egrep 'deb .*{0} main' /etc/apt/sources.list |"
+            " sed 's/{0}/{0}-proposed/' > /tmp/cloud-init-proposed.list;"
+            " sudo mv /tmp/cloud-init-proposed.list /etc/apt/sources.list.d/;"
+            " sudo apt-get update;"
+            " sudo apt-get install cloud-init --yes".format(series))
+
+    def clean(self, reboot=False):
+        """Clean cloud-init artifacts from the system making it look 'new'.
+
+        A cleaned system allows cloud-init to boot as if it is seeing the
+        instance on first boot.
+        """
+        clean_cmd = 'sudo rm -Rf /var/lib/cloud /var/log/cloud*'
+        if reboot:
+            clean_cmd += '; sudo reboot'
+        self.runcmd(clean_cmd)
+
+    def destroy(self):
+        """Stop and destroy the instance from EC2."""
+        self.instance.terminate()
+
+    def reboot(self):
+        """Stop and destroy the instance from EC2."""
+        self.instance.reboot()
+
+    def start(self):
+        """Start the instance running in EC2."""
+        self.instance.start()
+
+    def stop(self):
+        """Stop the instance from running in EC2."""
+        self.instance.stop()
+
+
+def get_ec2_image_id(series_name, region_name, root_store_name='ssd',
+                     virt_type='hvm'):
+    """Return a valid image id for the given series and region_name."""
+    try:
+       output = check_output(['image-status', 'ec2']).decode('utf-8')
+    except (FileNotFoundError, CalledProcessError) as e:
+       print('Could not find image-status command.'
+             ' Try git clone https://github.com/smoser/talk-simplestreams.git')
+       sys.exit(1)
+    for line in output.splitlines():
+        series, version, region, root_store, virt, ami_id = line.split()
+        if (series == series_name and region == region_name and
+            root_store == root_store_name and virt == virt_type):
+            return ami_id
+    raise RuntimeError("Couldn't find an image id for series {} in {}".format(
+        series_name, region_name))
+
+
+def get_parser():
+    """Return an argument parser for this command."""
+    parser = ArgumentParser(description=__doc__)
+    parser.add_argument(
+        '-i', '--image-id', type=str, help='Specify the EC2 ami id to deploy')
+    parser.add_argument(
+        '-d', '--script-dir', type=str, dest='script_dir',
+        help=('Specify a directory of scripts to run on the deployed instance.'
+              ' Scripts should use SCRIPT_ARTIFACT_DIR env variable for'
+              ' output.'))
+    parser.add_argument(
+        '-a', '--script-artifacts-dir', type=str, dest='artifacts_dir',
+        default=DEFAULT_LOCAL_ARTIFACT_DIR,
+        help=('Specify a local directory where results of script output'
+              ' artifacts are saved'))
+    parser.add_argument(
+        '-r', '--region', type=str, choices=EC2_REGIONS,
+        default=DEFAULT_REGION,
+        help='Specify a region to deploy to [default=%s]' % DEFAULT_REGION)
+    parser.add_argument(
+        '-u', '--user-data-file', dest='user_data_file', type=str,
+        help='Optional user-data file to run during instance initialization')
+    parser.add_argument(
+        '-s', '--series', type=str, default=DEFAULT_SERIES,
+        help='The default ubuntu series name to launch. [default={}]'.format(
+                 DEFAULT_SERIES))
+    return parser
+
+
+def ec2_create_secgroup(ec2_client, sec_group_name=None, source_cidr=None):
+    """Create cloud-init's test sec group with ssh ingress from source_cidr."""
+    if sec_group_name is None:
+        sec_group_name = SECGROUP_NAME
+    if source_cidr is None:
+        source_cidr = '0.0.0.0/0'
+    existing_groups = [
+        group for group in ec2_client.security_groups.filter(
+            GroupNames=[SECGROUP_NAME])]
+    if existing_groups:
+        return existing_groups[0]
+    secgroup = ec2_client.create_security_group(
+        GroupName=sec_group_name, Description=SECGROUP_DESCRIPTION)
+    permissions = [
+        {'FromPort':22, 'ToPort': 22, 'IpProtocol': 'tcp',
+         'IpRanges': [{'CidrIp': source_cidr}]}]
+    secgroup.authorize_ingress(IpPermissions=permissions)
+    return secgroup
+
+
+def ec2_create_instance(ec2_client, ami_id, user_data_file=None):
+    """Create and instance and wait for started state."""
+    kwargs = CREATE_INSTANCE_DEFAULTS
+    kwargs['ImageId'] = ami_id
+    kwargs['SecurityGroups'] = [SECGROUP_NAME]
+    if user_data_file:
+        if not os.path.exists(user_data_file):
+            raise RuntimeError(
+                'user-data file {} does not exist'.format(user_data_file))
+        with open(user_data_file) as stream:
+            kwargs['UserData'] = stream.read()
+    try:
+        [instance] = ec2_client.create_instances(**kwargs)
+    except ClientError as e:
+        if 'AuthFailure' in str(e):
+            raise RuntimeError(
+                'Credentials undefined or incorrect. Check ~/.aws/credentials')
+        raise
+    # block until running
+    print('Waiting for EC2 instance initialization')
+    instance.wait_until_running(
+        Filters=[{'Name': 'instance-state-name', 'Values': ['running']}])
+    instance.reload()
+    print('Found EC2 instance IP: {}'.format(
+        instance.meta.data['PublicDnsName']))
+    return instance
+
+
+def ec2_instance_scp(instance, source_path, dest_path):
+    """Scp files or dirs to an instance."""
+    hostname = instance.meta.data['PublicDnsName']
+    out = check_output(['scp', '-i', '~/Downloads/ubuntu.pem', '-o', 'StrictHostKeyChecking=no', source_path, dest_path])
+
+
+def ec2_instance_run_scripts(instance, scripts_dir, artifacts_dir):
+    """Push scripts directory to the instance, run them and return artifacts.
+
+    Provide SCRIPT_ARTIFACT_DIR env variable to scripts and copy any files in
+    remote SCRIPT_ARTIFACT_DIR into local artifacts_dir.
+
+    @param instance: ec2 cli instance object.
+    @param scripts_dir: Local path to a scripts directory which contains
+        executable scripts which can be run by run-parts on the instance.
+    @param artifacts_dir: Local path where script artifacts/results will be
+        copied.
+    """
+    local_cmd = ['tar', '-czf', '-', scripts_dir]
+    remote_artifact_basename = os.path.basename(REMOTE_ARTIFACT_DIR)
+
+    # Untar scripts_dir, run-parts scripts_dir, tar up REMOTE_ARTIFACT_DIR
+    remote_cmds = [
+        'tar xzf - -C /tmp',
+        'mkdir -p {0}'.format(REMOTE_ARTIFACT_DIR),
+        'SCRIPT_ARTIFACT_DIR={0} run-parts /tmp/{1}'.format(
+            REMOTE_ARTIFACT_DIR, scripts_dir),
+        'tar -czf - -C /tmp {}'.format(remote_artifact_basename)]
+
+    proc1 = Popen(local_cmd, stdout=PIPE)  # Tar up local scripts_dir
+    # Perform all remote_cmds in a single ssh interaction.
+    proc2 = ec2_instance_runcmd(
+        instance, '; '.join(remote_cmds), pipe_in=proc1, pipe_out=True)
+    # Untar REMOTE_ARTIFACT_DIR locally
+    proc3 = Popen(['tar', '-xzf', '-'], stdin=proc2.stdout, stdout=PIPE)
+    proc2.stdout.close()
+    out, err = proc3.communicate()
+    # Move the remote_artifacts dirname to local artifacts_dir
+    shutil.move(remote_artifact_basename, artifacts_dir)
+
+
+def ec2_instance_runcmd(instance, command, pipe_in=None, pipe_out=False):
+    """Run a directory or scripts on an ec2_instance sync results_dir"""
+    hostname = instance.meta.data['PublicDnsName']
+    stdin = None
+    if pipe_in:
+        stdin = pipe_in.stdout
+    ssh_cmd = [
+        'ssh', '-i', '~/Downloads/ubuntu.pem', '-o', 'StrictHostKeyChecking=no',
+        'ubuntu@{}'.format(hostname), '--']
+    proc = Popen(ssh_cmd + [command], stdin=stdin, stdout=PIPE)
+    if pipe_in:
+        pipe_in.stdout.close()  # Allow p1 to receive SIGPIPE if p2 exits
+    if pipe_out:
+        return proc  # Caller needs to communicate and close
+    out, err = proc.communicate()
+    return out.strip()
+
+
+def main():
+    parser = get_parser()
+    args = parser.parse_args()
+    ec2_client = boto3.resource('ec2')
+    ec2_create_secgroup(ec2_client)
+    image_id = args.image_id
+    if not image_id:
+        image_id = get_ec2_image_id(args.series, args.region)
+    instance = ec2_create_instance(ec2_client, image_id, args.user_data_file)
+    ec2_instance = EC2Instance(instance)
+    import pdb; pdb.set_trace()
+    if args.script_dir:
+        ec2_instance.run_scripts(args.script_dir, args.artifacts_dir)
+    ec2_instance.destroy()
+    return 0
+
+if __name__ == "__main__":
+    sys.exit(main())
