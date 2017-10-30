@@ -53,7 +53,7 @@ EC2_REGIONS = (
 # See also http://boto3.readthedocs.io/en/latest/reference/services/ec2.html#EC2.ServiceResource.create_instances
 CREATE_INSTANCE_DEFAULTS = {
     'ImageId': 'ami-FIXME',  # Must be set by our request
-    'KeyName': 'ubuntu',  # XXX Need to create/provide ssh key name
+    'KeyName': 'ubuntu', # TODO Create this key if absent
     'InstanceType': 't2.micro',
     'SecurityGroups': ['FIXME'],
     #Ipv6AddressCount=123,
@@ -92,6 +92,9 @@ class EC2Instance(object):
     def scp(self, source_path, dest_path):
         """Scp files or dirs to an instance."""
         hostname = self.instance.meta.data['PublicDnsName']
+        instance_user_at_host = 'ubuntu@{}'.format(hostname)
+        source_path = source_path.replace('{INSTANCE}', instance_user_at_host)
+        dest_path = dest_path.replace('{INSTANCE}', instance_user_at_host)
         check_output(
             ['scp', '-i', '~/Downloads/ubuntu.pem', '-o',
              'StrictHostKeyChecking=no', source_path, dest_path])
@@ -111,7 +114,8 @@ class EC2Instance(object):
             stdin = pipe_in.stdout
         ssh_cmd = [
             'ssh', '-i', '~/Downloads/ubuntu.pem', '-o',
-            'StrictHostKeyChecking=no', 'ubuntu@{}'.format(hostname), '--']
+            'StrictHostKeyChecking=no', 'ubuntu@{}'.format(hostname), '--',
+            'SCRIPT_ARTIFACT_DIR={}'.format(self.artifact_dir)]
         proc = Popen(ssh_cmd + [command], stdin=stdin, stdout=PIPE)
         if pipe_in:
             pipe_in.stdout.close()  # Allow p1 to receive SIGPIPE if p2 exits
@@ -220,7 +224,10 @@ def get_parser():
     parser.add_argument(
         '-i', '--image-id', type=str, help='Specify the EC2 ami id to deploy')
     parser.add_argument(
-        '-d', '--script-dir', type=str, dest='script_dir',
+        '--deb-file', type=str, required=False, dest='deb_file',
+        help='Provide a local deb for install on the instance')
+    parser.add_argument(
+        '--script-dir', type=str, dest='script_dir',
         help=('Specify a directory of scripts to run on the deployed instance.'
               ' Scripts should use SCRIPT_ARTIFACT_DIR env variable for'
               ' output.'))
@@ -297,12 +304,6 @@ def ec2_create_instance(ec2_client, ami_id, user_data_file=None):
     return instance
 
 
-def ec2_instance_scp(instance, source_path, dest_path):
-    """Scp files or dirs to an instance."""
-    hostname = instance.meta.data['PublicDnsName']
-    out = check_output(['scp', '-i', '~/Downloads/ubuntu.pem', '-o', 'StrictHostKeyChecking=no', source_path, dest_path])
-
-
 def main():
     parser = get_parser()
     args = parser.parse_args()
@@ -313,6 +314,11 @@ def main():
         image_id = get_ec2_image_id(args.series, args.region)
     instance = ec2_create_instance(ec2_client, image_id, args.user_data_file)
     ec2_instance = EC2Instance(instance)
+    if args.deb_file:
+        ec2_instance.scp(args.deb_file, '{INSTANCE}:.')
+        deb_filename = os.path.basename(args.deb_file)
+        ec2_instance.runcmd('sudo apt-get install --yes python3-jsonschema;'
+                            ' sudo dpkg -i ./{}'.format(deb_filename))
     if args.script_dir:
         ec2_instance.run_scripts(args.script_dir, args.artifacts_dir)
     if not args.keep_alive:
