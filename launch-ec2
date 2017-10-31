@@ -15,15 +15,18 @@ except ImportError:
         'Could not import boto3. Please install python3-boto3 '
         'package to continue')
 
+from base64 import b64encode
 import os
 import re
 import shutil
 from subprocess import (
     CalledProcessError, PIPE, Popen, check_output, check_call)
 import sys
+from time import sleep
 
 DEFAULT_REGION = 'us-east-2'
 DEFAULT_AVAILABILITY_ZONE = 'b'
+KEY_PAIR_NAME = 'cloud-init-integration'
 DEFAULT_SERIES = 'xenial'
 SECGROUP_NAME = 'Cloud-init integration test secgroup'
 SECGROUP_DESCRIPTION = 'Security group setting ssh ingress to instances'
@@ -53,7 +56,7 @@ EC2_REGIONS = (
 # See also http://boto3.readthedocs.io/en/latest/reference/services/ec2.html#EC2.ServiceResource.create_instances
 CREATE_INSTANCE_DEFAULTS = {
     'ImageId': 'ami-FIXME',  # Must be set by our request
-    'KeyName': 'ubuntu', # TODO Create this key if absent
+    'KeyName': 'cloud-init-integration',
     'InstanceType': 't2.micro',
     'SecurityGroups': ['FIXME'],
     #Ipv6AddressCount=123,
@@ -77,17 +80,25 @@ class EC2Instance(object):
     Methods provided simplify integration tests and validation.
     """
 
-    def __init__(self, instance, artifact_dir=REMOTE_ARTIFACT_DIR):
+    _cloud_init_ran = False   # True oncecloud-init completes on the instance
+
+    def __init__(self, instance, pubkey, artifact_dir=REMOTE_ARTIFACT_DIR,
+                 verbose=False):
         """Initialize this EC2Instance helper class.
 
         @param instance: ec2 boto3 instance object.
+        @param pubkey: Local path to the pubkey we'll use when contacting the
+            instance.
         @param artifact_dir: The remote directory in which script results can
             be stored.  This value is provided via runcmd as an environemnt
             variable $SCRIPT_ARTIFACT_DIR.
+        @param verbose: Boolean, set True to see commands sent to and from
+            instance.
         """
         self.instance = instance
+        self.pubkey = pubkey
         self.artifact_dir = artifact_dir
-
+        self.verbose = verbose
 
     def scp(self, source_path, dest_path):
         """Scp files or dirs to an instance."""
@@ -95,9 +106,9 @@ class EC2Instance(object):
         instance_user_at_host = 'ubuntu@{}'.format(hostname)
         source_path = source_path.replace('{INSTANCE}', instance_user_at_host)
         dest_path = dest_path.replace('{INSTANCE}', instance_user_at_host)
-        check_output(
-            ['scp', '-i', '~/Downloads/ubuntu.pem', '-o',
-             'StrictHostKeyChecking=no', source_path, dest_path])
+        cmd = ['scp', '-i', self.pubkey, '-o', 'StrictHostKeyChecking=no',
+               '-o', 'UserKnownHostsFile=/dev/null', source_path, dest_path]
+        check_output(cmd)
 
     def runcmd(self, command, pipe_in=None, pipe_out=False):
         """Run a command over ssh on the instance.
@@ -113,8 +124,8 @@ class EC2Instance(object):
         if pipe_in:
             stdin = pipe_in.stdout
         ssh_cmd = [
-            'ssh', '-i', '~/Downloads/ubuntu.pem', '-o',
-            'StrictHostKeyChecking=no', 'ubuntu@{}'.format(hostname), '--',
+            'ssh', '-i', self.pubkey, '-o', 'StrictHostKeyChecking=no', '-o',
+            'UserKnownHostsFile=/dev/null', 'ubuntu@{}'.format(hostname), '--',
             'SCRIPT_ARTIFACT_DIR={}'.format(self.artifact_dir)]
         proc = Popen(ssh_cmd + [command], stdin=stdin, stdout=PIPE)
         if pipe_in:
@@ -156,6 +167,13 @@ class EC2Instance(object):
         # Move the remote_artifacts dirname to local artifacts_dir
         shutil.move(remote_artifact_basename, artifacts_dir)
 
+    def wait_on_cloud_init(self):
+        print("Waiting on cloud-init")
+        self._cloud_init_ran = True
+        out, err = self.runcmd(
+            "while [ ! -f '/run/cloud-init/result.json' ]; do"
+            " echo -n '.'; sleep 1; done")
+
     def update_proposed_cloud_init(self):
         """Update cloud-init package to the version present in proposed."""
         match = re.match(
@@ -170,7 +188,8 @@ class EC2Instance(object):
             " sed 's/{0}/{0}-proposed/' > /tmp/cloud-init-proposed.list;"
             " sudo mv /tmp/cloud-init-proposed.list /etc/apt/sources.list.d/;"
             " sudo apt-get update;"
-            " sudo apt-get install cloud-init --yes".format(series))
+            " sudo  DEBIAN_FRONTEND=noninteractive apt-get install cloud-init"
+            " --yes".format(series))
 
     def clean(self, reboot=False):
         """Clean cloud-init artifacts from the system making it look 'new'.
@@ -179,9 +198,11 @@ class EC2Instance(object):
         instance on first boot.
         """
         clean_cmd = 'sudo rm -Rf /var/lib/cloud /var/log/cloud*'
-        if reboot:
-            clean_cmd += '; sudo reboot'
         self.runcmd(clean_cmd)
+        self._cloud_init_ran = True
+        if reboot:
+            print("Waiting for EC2 instance clean reboot")
+            self.reboot()
 
     def destroy(self):
         """Stop and destroy the instance from EC2."""
@@ -190,10 +211,14 @@ class EC2Instance(object):
     def reboot(self):
         """Stop and destroy the instance from EC2."""
         self.instance.reboot()
+        sleep(8)
+        self.instance.reload()
+        self.wait_on_cloud_init()
 
     def start(self):
         """Start the instance running in EC2."""
         self.instance.start()
+        self.wait_on_cloud_init()
 
     def stop(self):
         """Stop the instance from running in EC2."""
@@ -232,12 +257,17 @@ def get_parser():
               ' Scripts should use SCRIPT_ARTIFACT_DIR env variable for'
               ' output.'))
     parser.add_argument(
-        '-a', '--script-artifacts-dir', type=str, dest='artifacts_dir',
+        '--pubkey-file', required=True, type=str, dest='pubkey_file',
         default=DEFAULT_LOCAL_ARTIFACT_DIR,
         help=('Specify a local directory where results of script output'
               ' artifacts are saved'))
     parser.add_argument(
-        '-k', '--keep-alive', action='store_true', default=False,
+        '--script-artifacts-dir', type=str, dest='artifacts_dir',
+        default=DEFAULT_LOCAL_ARTIFACT_DIR,
+        help=('Specify a local directory where results of script output'
+              ' artifacts are saved'))
+    parser.add_argument(
+        '--keep-alive', action='store_true', default=False,
         dest='keep_alive', help='Leave the instance running after test.')
     parser.add_argument(
         '-p', '--proposed', action='store_true', default=False,
@@ -253,7 +283,29 @@ def get_parser():
         '-s', '--series', type=str, default=DEFAULT_SERIES,
         help='The default ubuntu series name to launch. [default={}]'.format(
                  DEFAULT_SERIES))
+    parser.add_argument(
+        '-v', '--verbose', action='store_true', default=False,
+        help='Print more information about the operations performed.')
+    parser.add_argument(
+        '-c', '--clean', action='store_true', default=False,
+        help=('Remove cloud-init artifacts and reboot system to re-run from'
+              'a pseudo-clean system boot.'))
     return parser
+
+
+def ec2_import_keypair(ec2_client, key_path):
+    """Create a new key in EC2 if not present using the pubkey at key_path.
+
+    @returns: ec2.KeyParInfo
+    """
+    pairs = [
+        k for k in ec2_client.key_pairs.filter(KeyNames=[KEY_PAIR_NAME])]
+    if pairs:
+        return pairs[0]  # We already have the key
+    with open(key_path, 'rb') as stream:
+        key_material = stream.read()
+    return ec2_client.import_key_pair(
+        KeyName=KEY_PAIR_NAME, PublicKeyMaterial=key_material)
 
 
 def ec2_create_secgroup(ec2_client, sec_group_name=None, source_cidr=None):
@@ -312,13 +364,18 @@ def main():
     image_id = args.image_id
     if not image_id:
         image_id = get_ec2_image_id(args.series, args.region)
+    ec2_import_keypair(ec2_client, args.pubkey_file)
     instance = ec2_create_instance(ec2_client, image_id, args.user_data_file)
-    ec2_instance = EC2Instance(instance)
+    ec2_instance = EC2Instance(instance, args.pubkey_file)
     if args.deb_file:
         ec2_instance.scp(args.deb_file, '{INSTANCE}:.')
         deb_filename = os.path.basename(args.deb_file)
         ec2_instance.runcmd('sudo apt-get install --yes python3-jsonschema;'
                             ' sudo dpkg -i ./{}'.format(deb_filename))
+    if args.proposed:
+        ec2_instance.update_proposed_cloud_init()
+    if args.clean:
+        ec2_instance.clean(reboot=True)
     if args.script_dir:
         ec2_instance.run_scripts(args.script_dir, args.artifacts_dir)
     if not args.keep_alive:
