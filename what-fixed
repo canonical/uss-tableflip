@@ -12,6 +12,7 @@ Usage: ${0##*/} [ options ] bug [commit-ish]
 
    options:
       -a | --all    find all commits referenced. not just the first.
+      -s | --short  show only the commit in output.
 EOF
 }
 
@@ -38,20 +39,21 @@ findcommits() {
 }
 
 main() {
-	local short_opts="hav"
-	local long_opts="help,all,verbose"
+	local short_opts="hasv"
+	local long_opts="help,all,short,verbose"
 	local getopt_out=""
 	getopt_out=$(getopt --name "${0##*/}" \
 		--options "${short_opts}" --long "${long_opts}" -- "$@") &&
 		eval set -- "${getopt_out}" ||
 		{ bad_Usage; return; }
 
-	local cur="" next="" all=""
+	local cur="" next="" all="" short=false
 	while [ $# -ne 0 ]; do
 		cur="$1"; next="$2";
 		case "$cur" in
 			-h|--help) Usage ; exit 0;;
 			-a|--all) all="--all";;
+			-s|--short) short=true;;
 			--) shift; break;;
 		esac
 		shift;
@@ -71,11 +73,16 @@ main() {
     commits=$(gitlog "${commitish}" | grep -E "^(commit:|LP:.*[ #]$bug)" |
               findcommits $all "$bug")
 	[ -n "$commits" ] || { error "no commit found for $bug"; return 1; }
+	local burl="https://git.launchpad.net/cloud-init/commit/?id="
 	for commit in ${commits}; do
-		git --no-pager show "$commit"
-        echo --
-		echo "http://pad.lv/$bug"
-        echo "https://git.launchpad.net/cloud-init/commit/?id=${commit:0:8}"
+        if $short; then
+		    echo "$commit"
+		else
+		    git --no-pager show "$commit"
+            echo --
+		    echo "http://pad.lv/$bug"
+            echo "$burl${commit:0:8}"
+		fi
 	done
 	return
 }
