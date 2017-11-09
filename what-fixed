@@ -1,0 +1,84 @@
+#!/bin/bash
+
+error() { echo "$@" 1>&2; }
+fail() { local r=$?;  [ $r -eq 0 ] && r=1; failrc "$r" "$@"; }
+failrc() { local r=$1; shift; [ $# -eq 0 ] || error "$@"; exit $r; }
+
+Usage() {
+	cat <<EOF
+Usage: ${0##*/} [ options ] bug [commit-ish]
+
+   Parse through git history and find what commit fixed a bug.
+
+   options:
+      -a | --all    find all commits referenced. not just the first.
+EOF
+}
+
+bad_Usage() { Usage 1>&2; [ $# -eq 0 ] || error "$@"; return 1; }
+
+gitlog() {
+    git log '--format=format:commit: %H%n%B' "$1"
+}
+
+findcommits() {
+	local all=false line="" bug="" commitline="" commit=""
+	[ "$1" = "--all" ] && { all=true; shift; }
+	bug="$1"
+	while read line; do
+		case "$line" in
+			commit:\ *) commitline="$line"; continue;;
+			LP:*\#$bug|LP:*\ $bug)
+				commit=${commitline#commit: }
+				echo "${commit}"
+				$all || return 0;;
+		esac
+	done
+	return 1
+}
+
+main() {
+	local short_opts="hav"
+	local long_opts="help,all,verbose"
+	local getopt_out=""
+	getopt_out=$(getopt --name "${0##*/}" \
+		--options "${short_opts}" --long "${long_opts}" -- "$@") &&
+		eval set -- "${getopt_out}" ||
+		{ bad_Usage; return; }
+
+	local cur="" next="" all=""
+	while [ $# -ne 0 ]; do
+		cur="$1"; next="$2";
+		case "$cur" in
+			-h|--help) Usage ; exit 0;;
+			-a|--all) all="--all";;
+			--) shift; break;;
+		esac
+		shift;
+	done
+
+	[ $# -eq 0 ] && { bad_Usage "Must provide bug."; return; }
+	[ $# -eq 2 -o $# -eq 1 ] ||
+        { bad_Usage "Got $# ($*) arguments, expected 1 or 2."; return; }
+
+	local bug="$1" commitish=${2:-HEAD}
+	bug=${bug#"#"}
+
+ 	git rev-parse --abbrev-ref HEAD >/dev/null ||
+		fail "failed to get current branch.  Are you in a git dir?";
+	
+	local commits="" commit=""
+    commits=$(gitlog "${commitish}" | grep -E "^(commit:|LP:.*[ #]$bug)" |
+              findcommits $all "$bug")
+	[ -n "$commits" ] || { error "no commit found for $bug"; return 1; }
+	for commit in ${commits}; do
+		git --no-pager show "$commit"
+        echo --
+		echo "http://pad.lv/$bug"
+        echo "https://git.launchpad.net/cloud-init/commit/?id=${commit:0:8}"
+	done
+	return
+}
+
+main "$@"
+# vi: ts=4 noexpandtab
