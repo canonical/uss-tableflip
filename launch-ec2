@@ -374,7 +374,6 @@ def main():
     check_deps(['awscli', 'simplestreams'])
     if not os.path.isfile(args.pubkey_file):
         error("--pubkey-file=%s: not a file\n" % args.pubkey_file)
-    import pdb; pdb.set_trace()
     image_id = args.image_id
     if not image_id:
         image_id = get_ec2_image_id(args.series, args.region)
