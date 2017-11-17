@@ -306,12 +306,19 @@ def get_parser():
 def ec2_import_keypair(ec2_client, key_path):
     """Create a new key in EC2 if not present using the pubkey at key_path.
 
-    @returns: ec2.KeyParInfo
+    @returns: ec2.KeyPairInfo
     """
-    pairs = [
-        k for k in ec2_client.key_pairs.filter(KeyNames=[KEY_PAIR_NAME])]
-    if pairs:
-        return pairs[0]  # We already have the key
+    try:
+        pairs = [
+            k for k in ec2_client.key_pairs.filter(KeyNames=[KEY_PAIR_NAME])]
+        if pairs:
+            return pairs[0]  # We already have the key
+    except ClientError as e:
+        if e.response['Error']['Code'] == 'InvalidKeyPair.NotFound':
+            pass
+        else:
+            raise
+
     with open(key_path, 'rb') as stream:
         key_material = stream.read()
     return ec2_client.import_key_pair(
