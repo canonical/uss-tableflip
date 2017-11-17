@@ -9,7 +9,7 @@ except ImportError:
         'package to continue')
 try:
     import boto3
-    from botocore.exceptions import ClientError
+    from botocore.exceptions import ClientError, NoCredentialsError
 except ImportError:
     raise RuntimeError(
         'Could not import boto3. Please install python3-boto3 '
@@ -20,7 +20,8 @@ import os
 import re
 import shutil
 from subprocess import (
-    CalledProcessError, PIPE, Popen, check_output, check_call)
+    CalledProcessError, DEVNULL, PIPE, STDOUT, Popen, call, check_call,
+    check_output)
 import sys
 from time import sleep
 
@@ -224,6 +225,15 @@ class EC2Instance(object):
         """Stop the instance from running in EC2."""
         self.instance.stop()
 
+def check_deps(packages):
+    missing_packages = []
+    for package in packages:
+        dpkg_cmd = ['dpkg', '-l', package]
+        if call(dpkg_cmd, stdout=DEVNULL, stderr=STDOUT) != 0:
+            missing_packages.append(package)
+    if missing_packages:
+        error('Missing packages: apt install {0}'.format(
+                  ' '.join(missing_packages)))
 
 def get_ec2_image_id(series_name, region_name, root_store_name='ssd',
                      virt_type='hvm'):
@@ -231,9 +241,9 @@ def get_ec2_image_id(series_name, region_name, root_store_name='ssd',
     try:
        output = check_output(['image-status', 'ec2']).decode('utf-8')
     except (FileNotFoundError, CalledProcessError) as e:
-       print('Could not find image-status command.'
-             ' Try git clone https://github.com/smoser/talk-simplestreams.git')
-       sys.exit(1)
+        print('Could not find image-status command. Try'
+              ' git clone https://github.com/smoser/talk-simplestreams.git')
+        sys.exit(1)
     for line in output.splitlines():
         series, version, region, root_store, virt, ami_id = line.split()
         if (series == series_name and region == region_name and
@@ -257,8 +267,8 @@ def get_parser():
               ' Scripts should use SCRIPT_ARTIFACT_DIR env variable for'
               ' output.'))
     parser.add_argument(
-        '--pubkey-file', required=True, type=str, dest='pubkey_file',
-        default=DEFAULT_LOCAL_ARTIFACT_DIR,
+        '--pubkey-file', required=False, type=str, dest='pubkey_file',
+        default=os.path.expanduser('~/.ssh/id_rsa.pub'),
         help=('Specify a local directory where results of script output'
               ' artifacts are saved'))
     parser.add_argument(
@@ -314,11 +324,14 @@ def ec2_create_secgroup(ec2_client, sec_group_name=None, source_cidr=None):
         sec_group_name = SECGROUP_NAME
     if source_cidr is None:
         source_cidr = '0.0.0.0/0'
-    existing_groups = [
-        group for group in ec2_client.security_groups.filter(
-            GroupNames=[SECGROUP_NAME])]
-    if existing_groups:
+    try:
+        existing_groups = [
+            group for group in ec2_client.security_groups.filter(
+                GroupNames=[SECGROUP_NAME])]
         return existing_groups[0]
+    except ClientError as e:
+        if e.response['Error']['Code'] == 'InvalidGroup.NotFound':
+            pass
     secgroup = ec2_client.create_security_group(
         GroupName=sec_group_name, Description=SECGROUP_DESCRIPTION)
     permissions = [
@@ -339,13 +352,7 @@ def ec2_create_instance(ec2_client, ami_id, user_data_file=None):
                 'user-data file {} does not exist'.format(user_data_file))
         with open(user_data_file) as stream:
             kwargs['UserData'] = stream.read()
-    try:
-        [instance] = ec2_client.create_instances(**kwargs)
-    except ClientError as e:
-        if 'AuthFailure' in str(e):
-            raise RuntimeError(
-                'Credentials undefined or incorrect. Check ~/.aws/credentials')
-        raise
+    [instance] = ec2_client.create_instances(**kwargs)
     # block until running
     print('Waiting for EC2 instance initialization')
     instance.wait_until_running(
@@ -356,16 +363,30 @@ def ec2_create_instance(ec2_client, ami_id, user_data_file=None):
     return instance
 
 
+def error(message):
+    sys.stderr.write('ERROR: {0}\n'.format(message))
+    sys.exit(1)
+
 def main():
     parser = get_parser()
     args = parser.parse_args()
-    ec2_client = boto3.resource('ec2')
-    ec2_create_secgroup(ec2_client)
+    os.environ['AWS_DEFAULT_REGION'] = args.region
+    check_deps(['awscli', 'simplestreams'])
+    if not os.path.isfile(args.pubkey_file):
+        error("--pubkey-file=%s: not a file\n" % args.pubkey_file)
+    import pdb; pdb.set_trace()
     image_id = args.image_id
     if not image_id:
         image_id = get_ec2_image_id(args.series, args.region)
-    ec2_import_keypair(ec2_client, args.pubkey_file)
-    instance = ec2_create_instance(ec2_client, image_id, args.user_data_file)
+    ec2_client = boto3.resource('ec2')
+    try:
+        ec2_create_secgroup(ec2_client)
+        ec2_import_keypair(ec2_client, args.pubkey_file)
+        instance = ec2_create_instance(
+            ec2_client, image_id, args.user_data_file)
+    except NoCredentialsError as e:
+        error('Credentials undefined or incorrect. Check ~/.aws/credentials')
+
     ec2_instance = EC2Instance(instance, args.pubkey_file)
     if args.deb_file:
         ec2_instance.scp(args.deb_file, '{INSTANCE}:.')
