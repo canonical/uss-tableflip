@@ -9,8 +9,9 @@ import os
 import re
 import shutil
 import sys
-import time
 from subprocess import (PIPE, Popen, check_output)
+import time
+import uuid
 
 _missing_deps = []
 
@@ -291,7 +292,7 @@ class SoftLayerInstance(object):
         self.runcmd(clean_cmd)
         self._cloud_init_ran = True
         if reboot:
-            print("Waiting for EC2 instance clean reboot")
+            print("Waiting for instance clean reboot")
             self.reboot()
 
     def destroy(self):
@@ -313,6 +314,20 @@ class SoftLayerInstance(object):
     def stop(self):
         """Stop the instance from running in EC2."""
         self.instance.stop()
+
+
+def image_id_to_guid(image, client):
+    try:
+        uuid.UUID(image)
+        return image
+    except ValueError:
+        pass
+
+    # raise a ValueError for caller if not an integer or int as string
+    int(image)
+    image_mgr = SoftLayer.ImageManager(client)
+    image_details = image_mgr.get_image(image, mask="id,globalIdentifier")
+    return image_details['globalIdentifier']
 
 
 def get_image_id(client, series_name, flavor):
@@ -344,19 +359,24 @@ def get_image_id(client, series_name, flavor):
     print(imgs[0])
     return imgs[0]['globalIdentifier']
 
-    # not kidding.  precise is 'UBUNTU_12_64', xenial UBUNTU_16_64.
-    s2v = {'precise': '12_64', 'trusty': '14_64', 'xenial': '16_64'}
-    if series_name not in s2v:
-        raise RuntimeError(
-            "Couldn't find an image id for series {}".format(series_name))
-    return 'UBUNTU_%s' % s2v[series_name]
+
+def get_os_name(name):
+    # translate 'os:xenial' to 'UBUNTU_16_64', os:OTHER to OTHER
+    if not name.startswith("os:"):
+        raise ValueError("Input did not start with os:")
+    s2v = {'precise': 'UBUNTU_12_64', 'trusty': 'UBUNTU_14_64',
+           'xenial': 'UBUNTU_16_64'}
+    short = name[3:]
+    return s2v.get(short, short)
 
 
 def get_parser():
     """Return an argument parser for this command."""
     parser = ArgumentParser(description=__doc__)
     parser.add_argument(
-        '-i', '--image-id', type=str, help='Specify the image id to deploy')
+        '-i', '--image-id', type=str,
+        help='Specify the image id to deploy. Use "os:xenial" to launch by '
+             'os_code. Or use "xenial" or image id (integer) or guid (uuid)'),
     parser.add_argument(
         '--deb-file', type=str, required=False, dest='deb_file',
         help='Provide a local deb for install on the instance')
@@ -494,8 +514,18 @@ def create_instance(client, image, keyname, flavor=None,
         }
     )
     if image.startswith("os:"):
-        opts['os_code'] = image[3:]
+        # image is 'os:' meaning launch by 'os' (os:UBUNTU_16_64)
+        # Get a list with:
+        # opts = vsmgr.get_create_options()
+        # [k['template']['operatingSystemReferenceCode']
+        #    for k in opts['operatingSystems']]
+        opts['os_code'] = get_os_name(image)
     else:
+        # if image is an integer, then we have to get the guid for that.
+        try:
+            image = image_id_to_guid(image, client)
+        except ValueError as e:
+            image = get_image_id(client, image, flavor)
         opts['image_id'] = image
 
     if security_groups is not None:
@@ -507,6 +537,7 @@ def create_instance(client, image, keyname, flavor=None,
     instance = vsmgr.create_instance(**opts)
 
     print('Waiting for instance initialization (%s)' % instance['id'])
+    printed_addr = False
     while True:
         ready = vsmgr.wait_for_ready(instance['id'], limit=20)
         if ready:
@@ -515,9 +546,11 @@ def create_instance(client, image, keyname, flavor=None,
         data = vsmgr.get_instance(instance['id'])
         status = data.get('activeTransaction', {}).get(
             'transactionStatus', {}).get("name", "no-status")
-        print("Not ready yet. %s" % str(status))
-        if data.get('primaryIpAddress'):
+        print("Not ready yet [%ds]. %s" %
+              (int(time.time() - start), str(status)))
+        if not printed_addr and data.get('primaryIpAddress'):
             print("primary ip: %s" % data['primaryIpAddress'])
+            printed_addr = True
         # print(json.dumps(data, indent=1) + "\n")
 
     data = vsmgr.get_instance(instance['id'])
