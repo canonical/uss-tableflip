@@ -1,4 +1,5 @@
-#!/usr/bin/env python3 '''Launch an instance on ec2 to test cloud-init'''
+#!/usr/bin/env python3
+'''Launch an instance on ec2 to test cloud-init'''
 
 try:
     from argparse import ArgumentParser
@@ -21,7 +22,8 @@ import shutil
 from subprocess import (
     CalledProcessError, DEVNULL, PIPE, STDOUT, Popen, call, check_call,
     check_output)
-import sys from time import sleep
+import sys
+from time import sleep
 
 DEFAULT_REGION = 'us-east-2'
 DEFAULT_AVAILABILITY_ZONE = 'b'
@@ -145,7 +147,8 @@ class EC2Instance(object):
             '; '.join(remote_cmds), pipe_in=proc1, pipe_out=True)
         # Untar self.artifact_dir locally
         proc3 = Popen(['tar', '-xzf', '-'], stdin=proc2.stdout, stdout=PIPE)
-        proc2.stdout.close() out, err = proc3.communicate()
+        proc2.stdout.close()
+        out, err = proc3.communicate()
         # Move the remote_artifacts dirname to local artifacts_dir
         shutil.move(remote_artifact_basename, artifacts_dir)
 
@@ -245,7 +248,7 @@ def get_parser():
         '--deb-file', type=str, required=False, dest='deb_file',
         help='Provide a local deb for install on the instance')
     parser.add_argument(
-        '--script-dir', type=str, dest='script_dir',cw
+        '--script-dir', type=str, dest='script_dir',
          help=('Specify a directory of scripts to run on the instance.'
                ' Scripts should use SCRIPT_ARTIFACT_DIR env variable for'
                ' output.'))
@@ -374,7 +377,6 @@ def ec2_create_secgroup(ec2, vpc_id, sec_group_name=None, ipv4_cidr=None,
         ipv6_cidr = '::/0'
     if not tag:
         tag = DEFAULT_TAG
-    import pdb; pdb.set_trace()
     existing_groups = [
         group for group in ec2.security_groups.filter(
             Filters=[{'Name': 'tag-key', 'Values': ['Name']},
@@ -396,15 +398,16 @@ def ec2_create_secgroup(ec2, vpc_id, sec_group_name=None, ipv4_cidr=None,
 def ec2_create_instance(ec2, ami_id, region_zone, secgroup, subnet,
                         user_data_file=None):
     """Create and instance and wait for started state."""
-    kwargs = CREATE_INSTANCE_DEFAULTS kwargs['ImageId'] = ami_id
+    kwargs = CREATE_INSTANCE_DEFAULTS
+    kwargs['ImageId'] = ami_id
     kwargs['NetworkInterfaces'][0]['Groups'] = [secgroup.id]
     kwargs['NetworkInterfaces'][0]['SubnetId'] = subnet.id
     kwargs['Placement']['AvailabilityZone'] = region_zone
     if user_data_file:
         if not os.path.exists(user_data_file):
             raise RuntimeError( 'user-data file {} does not exist'.format(user_data_file))
-    with open(user_data_file) as stream:
-        kwargs['UserData'] = stream.read()
+        with open(user_data_file) as stream:
+            kwargs['UserData'] = stream.read()
     [instance] = ec2.create_instances(**kwargs)
     # block until running
     print('Waiting for EC2 instance initialization')
