@@ -6,14 +6,15 @@ Update the bug with a comment.
 
 import argparse
 import sys
-import textwrap
 from launchpadlib.launchpad import Launchpad
+
 
 def main():
     parser = argparse.ArgumentParser()
 
-    subject_tmpl  = "Fixed in Cloud-init {version}"
-    comment_tmpl = ("This bug is believed to be fixed in cloud-init in "
+    subject_tmpl = "Fixed in Cloud-init {version}"
+    comment_tmpl = (
+        "This bug is believed to be fixed in cloud-init in "
         "{version}. If this is still a problem for you, please make a "
         "comment and set the state back to New\n\nThank you.")
 
@@ -32,17 +33,13 @@ def main():
 
     args = parser.parse_args()
 
-    if args.dry_run:
-        sys.stderr.write("not implemented\n")
-        sys.exit(1)
-
     lp = Launchpad.login_with("cloud-init fix-released", 'production',
                               version='devel')
 
     project_name = 'cloud-init'
-    lp_project = lp.projects(project_name)
-    project_url = lp_project.web_link
-    bug_url = 'https://bugs.launchpad.net/cloud-init/+bug/'
+    # lp_project = lp.projects(project_name)
+    # project_url = lp_project.web_link
+    # bug_url = 'https://bugs.launchpad.net/cloud-init/+bug/'
 
     data = {'version': args.version}
     if comment_tmpl:
@@ -55,16 +52,13 @@ def main():
     else:
         subject = None
 
-
     if subject and not comment:
         sys.stderr.write("Cannot set subject and not comment.\n")
         sys.exit(1)
 
-    tasks = []
-    missing = []
     buginfo = []
     for bug_num in args.bugs:
-        found = None
+        print("  getting bug %s" % bug_num)
         bug = lp.bugs[bug_num]
         info = {'task': None, 'bug': bug, 'num': bug_num}
         for task in bug.bug_tasks:
@@ -73,13 +67,12 @@ def main():
                 break
         buginfo.append(info)
 
-
     missing = [i['num'] for i in buginfo if i['task'] is None]
     if missing:
         print("missing tasks for: %s" % ' '.join(missing))
 
     fix_released = 'Fix Released'
-    print("buginfo: %s" % buginfo)
+    # print("buginfo: %s" % buginfo)
     for info in buginfo:
         print("bug %s" % info['num'])
         task = info['task']
@@ -89,6 +82,11 @@ def main():
         bug = info['bug']
         if task.status == fix_released:
             print("%s: already fix released\n" % info['num'])
+            continue
+        if args.dry_run:
+            print("  mark as fix-released")
+            if comment:
+                print("  add comment.")
             continue
         task.status = fix_released
         task.lp_save()
