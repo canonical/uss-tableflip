@@ -37,7 +37,6 @@ def main():
     if not re.match(r"^[0-9][0-9].[0-9]$", args.version):
         sys.stderr.write("%s does not look like a version.\n" % args.version)
         sys.exit(1)
-    sys.exit(1)
 
     lp = Launchpad.login_with("cloud-init fix-released", 'production',
                               version='devel')
