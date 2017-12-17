@@ -1,0 +1,320 @@
+#!/usr/bin/python3
+
+"""Review or merge cloud-init's git branches.A"""
+
+from argparse import ArgumentParser
+from launchpadlib.launchpad import Launchpad
+from subprocess import check_output, Popen, PIPE
+import os
+import re
+import sys
+
+VERBOSITY = 0
+DRYRUN = False
+
+
+def error(message):
+    if isinstance(message, bytes):
+        message = message.decode('utf-8')
+    log('ERROR: {error}'.format(error=message))
+    sys.exit(1)
+
+
+def log(message, verbosity=0):
+   '''Print a message to logs when VERBOSITY >= verbosity.'''
+   if VERBOSITY >= verbosity:
+       print(message)
+
+
+def subp(cmd):
+   log('$ {command}'.format(command=' '.join(cmd)), 0 if DRYRUN else 1)
+   if DRYRUN:
+       return ''
+   proc = Popen(cmd, stdout=PIPE, stderr=PIPE)
+   out, err = proc.communicate()
+   if proc.returncode:
+       error(err if err else out)
+   return out.decode('utf-8')
+
+
+VALID_MP_STATUSES = [
+    'Work in progress', 'Needs review', 'Approved', 'Rejected', 'Merged',
+    'Code failed to merge', 'Queued', 'Superseded']
+GIT_MAX_WIDTH = 74
+RE_MERGE_URL = r'https://code.launchpad.net/~(?P<lpuser>[-.a-z]+)/cloud-init/\+git/cloud-init/\+merge/\d+'
+RE_LP_BUG_ID = r'LP: #(?P<id>\d+)'
+
+
+### Comment templates
+COMMIT_MESSAGE_LINTS_TMPL = '''
+Thank you for your merge proposal.
+
+Your branch has been set to 'Work in progress'.
+Please set the branch back to 'Needs Review' after resolving the issues below.
+
+Thanks again,
+Your friendly neighborhood cloud-init robot.
+
+Please fix the following issues:
+------------------------------
+{errors}
+------------------------------
+
+For more information, see commit message guidelines at
+https://cloudinit.readthedocs.io/en/latest/topics/hacking.html#do-these-things-for-each-feature-or-bug
+'''
+
+
+def get_parser():
+    parser = ArgumentParser(description=__doc__)
+    parser.add_argument(
+        '--all', required=False, default=False, action='store_true',
+        help=('Whether or not to operate on all merge proposals matching the'
+              ' provided "status". Default:false'))
+    parser.add_argument(
+        '--merge', required=False, default=False, action='store_true',
+        help=('Whether to merge the matching branches into --upstream-branch.'
+              ' Default: False'))
+    parser.add_argument(
+        '--dryrun', required=False, default=False, action='store_true',
+        help=('Run commands and review operation in dryrun mode, making not changes.'))
+    parser.add_argument(
+        '--status', required=False, default='Approved',
+        choices=VALID_MP_STATUSES,
+        help=('Only review launchpad merge proposals with this status.'
+              ' Default: Approved'))
+    parser.add_argument(
+        '--local-repo-dir', required=False, dest='repo_dir',
+        default='ci-publishing',
+        help='The name of the local directory into which we clone cloud-init.')
+    parser.add_argument(
+        '--remote', required=False, default='git+ssh://chad.smith@git.launchpad.net/cloud-init',
+        help='The git remote we are cloning and merging into.')
+    parser.add_argument(
+        '--upstream-branch', required=False, dest='upstream',
+        default='origin/master',
+        help=('The name of remote branch target into which we will merge.'
+              ' Default: origin/master'))
+    parser.add_argument(
+        '--test', required=False, default=False, action='store_true',
+        help=('Whether to run tox before marking merged and fix committed'))
+    return parser
+
+
+def scrub_commit_msg(mp):
+    '''Attempt to scrub commit message.
+
+    @raises: ValueError on invalid commit message format.
+    '''
+    if not mp.commit_message:
+        raise ValueError('No commit message in Launchpad')
+    lines = mp.commit_message.splitlines()
+    errors = []
+    if len(lines) > 1 and lines[1] != '\n':
+        errors.append('Expected empty line on line 2 of the commit message')
+    commit_msg = []
+    for line_num, line in enumerate(lines):
+        overflow_count = len(line) - GIT_MAX_WIDTH
+        if overflow_count > 0:
+            # TODO actually fix line width and carry overflow to next line.
+            line_beginning =  line[:line.find(' ', 20)]
+            errors.append(
+                'Line #{line_num} has {overflow_count} too many characters.'
+                ' Line starts with: "{beginning}"...'.format(
+                    line_num=line_num, overflow_count=overflow_count,
+                    beginning=line_beginning))
+        commit_msg.append(line)
+    if errors:
+        error_msg = 'Commit message lints:\n - ' + ' - '.join(errors)
+        raise ValueError(error_msg)
+    return '\n'.join(commit_msg)
+
+
+def handle_commit_message_errors(source_mp, error_message):
+    '''Report commit message lints or errors on a merge proposal.
+
+    Add a comment with errors, vote 'Needs Fixing' and mark the branch as
+    'Work in progress'.
+
+    @param source_mp: The MergeProposal object from Launchpad.
+    @param error_message: Specific issue which needs fixing in the
+        commit message.
+    '''
+    source_path = source_mp.source_git_path.replace('refs/heads', '')
+    content = content=COMMIT_MESSAGE_LINTS_TMPL.format(
+        branch_path=source_path, errors=error_message,
+        max_line_length=GIT_MAX_WIDTH)
+    log('✗: marked "Work in progress": {0}\n{1}'.format(
+            source_mp.web_link, error_message))
+    if not DRYRUN:
+        source_mp.createComment(
+            subject='Cloud-init commit message lints on {0}'.format(source_path),
+            content=content, vote='Needs Fixing')
+        if source_mp.queue_status != 'Work in progress':
+            source_mp.setStatus(status="Work in progress")
+            source_mp.lp_save()
+
+
+def prompt_source_mp(source_mps):
+    '''Prompt user for which source_mp on which they want to operate.
+
+    @returns: The user-selected launchpadlib.MergeProposal object.
+    '''
+    rows = []
+    width_url = width_summary = 0
+    for idx, mp in enumerate(source_mps):
+        summary = ''
+        if mp.commit_message:
+            summary = mp.commit_message.splitlines()[0][:60]
+        elif mp.description:
+            summary = mp.description.splitlines()[0][:60]
+        url = mp.web_link
+        if len(url) > width_url:
+            width_url = len(url)
+        if len(summary) > width_summary:
+            width_summary = len(summary)
+        rows.append((idx, url, summary))
+    log('Potential merge proposals:')
+    header = ('| Choice | {0: <{width_url}} | {1: <{width_summary}} |'.format(
+                  'Merge Proposal', 'Summary',
+                  width_url=width_url, width_summary=width_summary))
+    seperator = '|{0}+{1}+{2}|'.format(
+        '-'*8, '-'*(width_url + 2), '-'*(width_summary + 2))
+    log(seperator)
+    log(header)
+    log(seperator)
+    for row in rows:
+       log('| {0: <6} | {1: <{width_url}} | {2: <{width_summary}} |'.format(
+               row[0], row[1], row[2],
+               width_url=width_url, width_summary=width_summary))
+    log(seperator)
+    choice = ''
+    valid_choices = [str(choice) for choice in range(len(source_mps))]
+    valid_choice_str = '/'.join(valid_choices)
+    while choice not in valid_choices:
+        choice = input('Merge which proposal? ({0}) '.format(valid_choice_str))
+    return source_mps[int(choice)]
+
+
+def git_remotes(upstream_remote):
+    '''Return a tuple of remotes and remote-prefix expected for new remotes.
+
+    @param upstream_branch_path: String such as origin/master describing the
+        local branch path representing the upstream remote into which we'll
+        merge.
+    @returns: Tuple containing a list of current remote names and the prefix
+              required when adding git remotes.
+    '''
+    remote_names = subp(['git', 'remote'])
+    out = subp(['git', 'remote', 'get-url', upstream_remote])
+    git_prefix = out.strip().replace('cloud-init', '')
+    return remote_names, git_prefix
+
+
+def create_publish_branch(upstream, publish_branch):
+    '''Create clean publish branch target in the current git repo.'''
+    branches = subp(['git', 'branch'])
+    upstream_remote, upstream_branch = upstream.split('/')
+    if publish_branch in branches:
+        subp(['git', 'checkout', upstream_branch])
+        subp(['git', 'branch', '-D', 'publish_target'])
+    subp(['git', 'checkout', upstream, '-b', publish_branch])
+
+
+def merge_source_mp(lp, source_mp, commit_msg, upstream_branch_path):
+    '''Merge source_mp into the current local branch.
+
+    Also mark the bugs referenced in the commit message as Fix committed.
+    '''
+    source_remote = 'publish_source'
+    upstream_remote, _ = upstream_branch_path.split('/')
+    source_path = source_mp.source_git_path.replace('refs/heads', '')
+    lp_user = re.match(RE_MERGE_URL, source_mp.web_link).group('lpuser')
+    remotes, git_prefix = git_remotes(upstream_remote)
+    if source_remote in remotes:
+        subp(['git', 'remote', 'remove', source_remote])
+    subp(['git', 'remote', 'add', source_remote,
+          '{0}~{1}/cloud-init'.format(git_prefix, lp_user)])
+    subp(['git', 'fetch', source_remote])
+    subp(['git', 'merge', '{0}{1}'.format(source_remote, source_path),
+          '--squash'])
+
+    with open(os.path.join(os.getcwd(), 'commit.msg'), 'wb') as stream:
+        stream.write(commit_msg.encode('utf-8'))
+    # Grab author string from most recent commit on the proposed branch
+    author = subp(
+        ['git', 'log', '-n', '1', 'publish_source{0}'.format(source_path),
+         '--pretty="%an <%ae>'])
+    subp(['git', 'commit', '--all', '-F', 'commit.msg', '--author', author])
+    set_bug_status(lp, commit_msg, b'Fix Committed')
+
+
+def set_bug_status(lp, commit_msg, bug_status):
+    '''Close any bugs specifically called out in the commit message.'''
+    bug_ids = re.findall(RE_LP_BUG_ID, commit_msg)
+    log('Setting status of bugs to {0}:\n{1}'.format(
+            bug_status,
+            '\n'.join('http://pad.lv/{0}'.format(bug_id)
+                      for bug_id in bug_ids)))
+    for bug_id in bug_ids:
+        bug = lp.bugs[int(bug_id)]
+        for task in bug.bug_tasks:
+            if task.bug_target_name == 'cloud-init':
+                task.status = bug_status
+                task.lp_save()
+
+
+def main():
+    global DRYRUN
+    parser = get_parser()
+    args = parser.parse_args()
+    DRYRUN = args.dryrun
+    lp = Launchpad.login_with(
+        "cloud-init git-merge tool", 'production', version='devel')
+    lp_project = lp.projects('cloud-init')
+    source_mps = [
+        mp for mp in lp_project.getMergeProposals(status=args.status)]
+    exit_code = 0
+    if not source_mps:
+        log('No merge proposals in {0} status.'.format(args.status))
+        return exit_code
+
+    if args.merge:
+        if not os.path.exists(args.repo_dir):
+            subp(['git', 'clone', args.remote, args.repo_dir])
+        os.chdir(args.repo_dir)
+        create_publish_branch(args.upstream, 'publish_target')
+
+    if not args.all:
+        source_mps = [prompt_source_mp(source_mps)]
+    for source_mp in source_mps:
+        source_path = source_mp.source_git_path.replace('refs/heads', '')
+        try:
+            commit_msg = scrub_commit_msg(source_mp)
+        except ValueError as e:
+            handle_commit_message_errors(source_mp, str(e))
+            exit_code = 1
+            continue
+        if args.merge:
+            merge_source_mp(lp, source_mp, commit_msg, args.upstream)
+            if args.test:
+                log('Running tox test prior to marking merged')
+                tox_output = subp(['tox'])
+                # Print redacted tox summary
+                log('\n'.join(tox_output.splitlines()[-8:]))
+            commitish = subp(['git', 'log', '-n', '1', '--pretty=%H'])
+            if source_mp.queue_status != 'Merged':
+                source_mp.setStatus(status='Merged', revid=commitish.strip())
+                source_mp.lp_save()
+        log('✔: {merge_url}'.format(merge_url=source_mp.web_link))
+    if exit_code == 0:
+        log('Merge reviews complete')
+        if args.merge:
+            upstream_remote, upstream_branch = args.upstream.split('/')
+            log('When ready:\n  git push {0} publish_target:{1}'.format(
+                    upstream_remote, upstream_branch))
+    return exit_code
+
+
+if __name__ == '__main__':
+    sys.exit(main())
