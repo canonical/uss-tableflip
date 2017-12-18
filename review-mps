@@ -43,6 +43,7 @@ VALID_MP_STATUSES = [
 GIT_MAX_WIDTH = 74
 RE_MERGE_URL = r'https://code.launchpad.net/~(?P<lpuser>[-.a-z]+)/cloud-init/\+git/cloud-init/\+merge/\d+'
 RE_LP_BUG_ID = r'LP: #(?P<id>\d+)'
+GIT_REMOTE_PATH_TMPL = 'git+ssh://{lp_user}@git.launchpad.net/cloud-init'
 
 
 ### Comment templates
@@ -88,8 +89,8 @@ def get_parser():
         default='ci-publishing',
         help='The name of the local directory into which we clone cloud-init.')
     parser.add_argument(
-        '--remote', required=False, default='git+ssh://chad.smith@git.launchpad.net/cloud-init',
-        help='The git remote we are cloning and merging into.')
+        '--git-user', required=True, dest='git_user',
+        help='The lp_user we use for cloning cloud-init upstream remote.')
     parser.add_argument(
         '--upstream-branch', required=False, dest='upstream',
         default='origin/master',
@@ -278,11 +279,20 @@ def main():
     if not source_mps:
         log('No merge proposals in {0} status.'.format(args.status))
         return exit_code
+    upstream_remote, upstream_branch = args.upstream.split('/')
 
     if args.merge:
         if not os.path.exists(args.repo_dir):
-            subp(['git', 'clone', args.remote, args.repo_dir])
-        os.chdir(args.repo_dir)
+            subp(['git', 'clone',
+                  GIT_REMOTE_PATH_TMPL.format(lp_user=args.git_user),
+                  args.repo_dir])
+            os.chdir(args.repo_dir)
+        else:
+            log('Re-using existing repo dir: {0}'.format(args.repo_dir))
+            os.chdir(args.repo_dir) 
+            # Refresh local copy of upstream master
+            subp(['git', 'checkout', upstream_branch])
+            subp(['git', 'pull'])
         create_publish_branch(args.upstream, 'publish_target')
 
     if not args.all:
@@ -310,7 +320,6 @@ def main():
     if exit_code == 0:
         log('Merge reviews complete')
         if args.merge:
-            upstream_remote, upstream_branch = args.upstream.split('/')
             log('When ready:\n  git push {0} publish_target:{1}'.format(
                     upstream_remote, upstream_branch))
     return exit_code
