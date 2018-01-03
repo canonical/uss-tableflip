@@ -111,7 +111,7 @@ def scrub_commit_msg(mp):
         raise ValueError('No commit message in Launchpad')
     lines = mp.commit_message.splitlines()
     errors = []
-    if len(lines) > 1 and lines[1] != '\n':
+    if len(lines) > 1 and lines[1].strip() != '':
         errors.append('Expected empty line on line 2 of the commit message')
     commit_msg = []
     for line_num, line in enumerate(lines):
