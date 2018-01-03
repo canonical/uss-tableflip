@@ -321,8 +321,8 @@ def main():
     if exit_code == 0:
         log('Merge reviews complete')
         if args.merge:
-            log('When ready:\n  git push {0} publish_target:{1}'.format(
-                    upstream_remote, upstream_branch))
+            log('Publish:\n  cd {0}; git push {1} publish_target:{2}'.format(
+                    args.repo_dir, upstream_remote, upstream_branch))
     return exit_code
 
 
