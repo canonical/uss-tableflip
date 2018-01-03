@@ -247,7 +247,7 @@ def merge_source_mp(lp, source_mp, commit_msg, upstream_branch_path):
         ['git', 'log', '-n', '1', 'publish_source{0}'.format(source_path),
          '--pretty="%an <%ae>'])
     subp(['git', 'commit', '--all', '-F', 'commit.msg', '--author', author])
-    set_bug_status(lp, commit_msg, b'Fix Committed')
+    set_bug_status(lp, commit_msg, 'Fix Committed')
 
 
 def set_bug_status(lp, commit_msg, bug_status):
@@ -261,8 +261,9 @@ def set_bug_status(lp, commit_msg, bug_status):
         bug = lp.bugs[int(bug_id)]
         for task in bug.bug_tasks:
             if task.bug_target_name == 'cloud-init':
-                task.status = bug_status
-                task.lp_save()
+                if task.status != bug_status:
+                    task.status = bug_status
+                    task.lp_save()
 
 
 def main():
