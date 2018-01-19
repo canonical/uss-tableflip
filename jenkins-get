@@ -9,13 +9,13 @@ failrc() { local r=$1; shift; [ $# -eq 0 ] || error "$@"; exit $r; }
 
 Usage() {
 	cat <<EOF
-Usage: ${0##*/} [ options ] build-url name
+Usage: ${0##*/} [ options ] build-url
 
    Download Jenkins artifacts and console from build-url
 
 Example:
- * ${0##*/} https://jenkins/server/job/cloud-init-integration-a/175 artful
-   creates artful-console.txt and artful-artifacts.tar.xz
+ * ${0##*/} https://jenkins/server/job/cloud-init-integration-a/175
+   creates curtin-vmtest-proposed-a-artifacts.tar.xz
 EOF
 }
 
@@ -40,7 +40,7 @@ main() {
 		{ bad_Usage; return; }
 
 	local cur="" next=""
-	local url="" name=""
+	local url=""
 
 	while [ $# -ne 0 ]; do
 		cur="$1"; next="$2";
@@ -53,10 +53,9 @@ main() {
 		shift;
 	done
 
-	[ $# -eq 2 ] || { bad_Usage "Expected 2 arguments, got $# ($*)"; return; }
+	[ $# -eq 1 ] || { bad_Usage "Expected 1 argument, got $# ($*)"; return; }
 
 	url="$1"
-    name="$2"
 
 	TEMP_D=$(mktemp -d "${TMPDIR:-/tmp}/${0##*/}.XXXXXX") ||
 		fail "failed to make tempdir"
