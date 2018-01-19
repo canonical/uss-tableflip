@@ -74,7 +74,7 @@ main() {
     debug 1 "project-name=$name build-number=$number"
     url="${burl}/$name/$number"
 
-    local ctmp="${TEMP_D}/$name-console.log" 
+    local ctmp="${TEMP_D}/$name-console.log"
     local atmp="${TEMP_D}/$name-artifacts.zip"
     local atxz="${TEMP_D}/$name-artifacts.tar.xz"
     local aurl="$url/artifact/*zip*/archive.zip"
