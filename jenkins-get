@@ -8,7 +8,7 @@ fail() { local r=$?;  [ $r -eq 0 ] && r=1; failrc "$r" "$@"; }
 failrc() { local r=$1; shift; [ $# -eq 0 ] || error "$@"; exit $r; }
 
 Usage() {
-	cat <<EOF
+    cat <<EOF
 Usage: ${0##*/} [ options ] build-url
 
    Download Jenkins artifacts and console from build-url
@@ -21,78 +21,78 @@ EOF
 
 bad_Usage() { Usage 1>&2; [ $# -eq 0 ] || error "$@"; return 1; }
 debug() {
-	local level=${1}; shift;
-	[ "${level}" -gt "${VERBOSITY}" ] && return
-	error "${@}"
+    local level=${1}; shift;
+    [ "${level}" -gt "${VERBOSITY}" ] && return
+    error "${@}"
 }
 
 cleanup() {
-	[ -z "${TEMP_D}" -o ! -d "${TEMP_D}" ] || rm -Rf "${TEMP_D}"
+    [ -z "${TEMP_D}" -o ! -d "${TEMP_D}" ] || rm -Rf "${TEMP_D}"
 }
 
 main() {
-	local short_opts="hv"
-	local long_opts="help,verbose"
-	local getopt_out=""
-	getopt_out=$(getopt --name "${0##*/}" \
-		--options "${short_opts}" --long "${long_opts}" -- "$@") &&
-		eval set -- "${getopt_out}" ||
-		{ bad_Usage; return; }
+    local short_opts="hv"
+    local long_opts="help,verbose"
+    local getopt_out=""
+    getopt_out=$(getopt --name "${0##*/}" \
+        --options "${short_opts}" --long "${long_opts}" -- "$@") &&
+        eval set -- "${getopt_out}" ||
+        { bad_Usage; return; }
 
-	local cur="" next=""
-	local url=""
+    local cur="" next=""
+    local url=""
 
-	while [ $# -ne 0 ]; do
-		cur="$1"; next="$2";
-		case "$cur" in
-			-h|--help) Usage ; exit 0;;
-			-o|--output) output=$next; shift;;
-			-v|--verbose) VERBOSITY=$((${VERBOSITY}+1));;
-			--) shift; break;;
-		esac
-		shift;
-	done
+    while [ $# -ne 0 ]; do
+        cur="$1"; next="$2";
+        case "$cur" in
+            -h|--help) Usage ; exit 0;;
+            -o|--output) output=$next; shift;;
+            -v|--verbose) VERBOSITY=$((${VERBOSITY}+1));;
+            --) shift; break;;
+        esac
+        shift;
+    done
 
-	[ $# -eq 1 ] || { bad_Usage "Expected 1 argument, got $# ($*)"; return; }
+    [ $# -eq 1 ] || { bad_Usage "Expected 1 argument, got $# ($*)"; return; }
 
-	url="$1"
+    url="$1"
 
-	TEMP_D=$(mktemp -d "${TMPDIR:-/tmp}/${0##*/}.XXXXXX") ||
-		fail "failed to make tempdir"
-	trap cleanup EXIT
+    TEMP_D=$(mktemp -d "${TMPDIR:-/tmp}/${0##*/}.XXXXXX") ||
+        fail "failed to make tempdir"
+    trap cleanup EXIT
 
     url="${url%/}/"
-	# url of format http://..../job/<name>/number
+    # url of format http://..../job/<name>/number
     local burl="${url%%/job/*}/job"
-	local t="" t2=""
-	# t gets <project>/number[/*]
-	t="${url#${burl}/}"
-	local name="" number=""
-	set -- ${t//\// }
-	name=${1}
-	number=${2}
-	debug 1 "project-name=$name build-number=$number"
-	url="${burl}/$name/$number"
+    local t="" t2=""
+    # t gets <project>/number[/*]
+    t="${url#${burl}/}"
+    local name="" number=""
+    set -- ${t//\// }
+    name=${1}
+    number=${2}
+    debug 1 "project-name=$name build-number=$number"
+    url="${burl}/$name/$number"
 
-	local ctmp="${TEMP_D}/$name-console.log" 
-	local atmp="${TEMP_D}/$name-artifacts.zip"
-	local atxz="${TEMP_D}/$name-artifacts.tar.xz"
-	local aurl="$url/artifact/*zip*/archive.zip"
+    local ctmp="${TEMP_D}/$name-console.log" 
+    local atmp="${TEMP_D}/$name-artifacts.zip"
+    local atxz="${TEMP_D}/$name-artifacts.tar.xz"
+    local aurl="$url/artifact/*zip*/archive.zip"
     wget "$url/consoleText" -O "$ctmp" ||
-		fail "failed to download $url/consoleText"
+        fail "failed to download $url/consoleText"
     wget "$aurl" -O "$atmp" ||
-		fail "failed download $aurl"
+        fail "failed download $aurl"
     mkdir "${TEMP_D}/ex" &&
         ( cd "${TEMP_D}/ex" && unzip "${atmp}" ) ||
-		fail "failed to extract zip file from $aurl"
+        fail "failed to extract zip file from $aurl"
 
-	tar -C "${TEMP_D}/ex" -cJf "$atxz" . ||
-		fail "failed to create $atxz"
+    tar -C "${TEMP_D}/ex" -cJf "$atxz" . ||
+        fail "failed to create $atxz"
 
-	mv "$ctmp" "$atxz" . || fail "failed moving files to ."
+    mv "$ctmp" "$atxz" . || fail "failed moving files to ."
 
-	error "wrote to ${ctmp##*/} ${atxz##*/}"
+    error "wrote to ${ctmp##*/} ${atxz##*/}"
 }
 
 main "$@"
-# vi: ts=4 noexpandtab
+# vi: ts=4 expandtab syntax=sh
