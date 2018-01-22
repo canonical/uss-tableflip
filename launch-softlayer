@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-'''Launch an instance on ec2 to test cloud-init'''
+'''Launch an instance on softlayer to test cloud-init'''
 
 # see 'check_deps' below for non-standard lib imports.
 
@@ -163,7 +163,7 @@ FLAVORS = (
 
 
 class SoftLayerInstance(object):
-    """Wrapper around a boto ec2 instance providing methods for testing.
+    """Wrapper around a SoftLayer instance providing methods for testing.
 
     Methods provided simplify integration tests and validation.
     """
@@ -172,7 +172,7 @@ class SoftLayerInstance(object):
 
     def __init__(self, instance, pubkey, client,
                  artifact_dir=REMOTE_ARTIFACT_DIR, verbose=False):
-        """Initialize this EC2Instance helper class.
+        """Initialize this helper class.
 
         @param instance: a SoftLayer instance dictionary.
         @param pubkey: Local path to the pubkey we'll use when contacting the
@@ -296,23 +296,23 @@ class SoftLayerInstance(object):
             self.reboot()
 
     def destroy(self):
-        """Stop and destroy the instance from EC2."""
+        """Stop and destroy the instance."""
         self.vsmgr.cancel_instance(self.instance['id'])
 
     def reboot(self):
-        """Stop and destroy the instance from EC2."""
+        """Stop and destroy the instance."""
         self.instance.reboot()
         time.sleep(8)
         self.instance.reload()
         self.wait_on_cloud_init()
 
     def start(self):
-        """Start the instance running in EC2."""
+        """Start the instance."""
         self.instance.start()
         self.wait_on_cloud_init()
 
     def stop(self):
-        """Stop the instance from running in EC2."""
+        """Stop the instance."""
         self.instance.stop()
 
 
