@@ -27,6 +27,7 @@ from time import sleep
 
 DEFAULT_REGION = 'us-east-2'
 DEFAULT_AVAILABILITY_ZONE = 'b'
+DEFAULT_FLAVOR = 't2.micro'
 KEY_PAIR_NAME = 'cloud-init-integration'
 DEFAULT_TAG = 'cloud-init-integration'
 DEFAULT_SERIES = 'xenial'
@@ -44,6 +45,18 @@ EC2_REGIONS = (
     'eu-west-1', 'eu-west-2', 'sa-east-1', 'us-east-1', 'us-east-2',
     'us-west-1', 'us-west-2')
 
+def _family(name, sizes):
+    return tuple([name + "." + s for s in sizes])
+
+# this is non-exhaustive, and thus only used for examples.
+FLAVORS = (
+    _family('t2', ('nano', 'micro', 'small', 'medium', 'large')) +
+    _family('m4', ('large', 'xlarge', '2xlarge')) +
+    _family('m5', ('large', 'xlarge', '2xlarge')) +
+    # i3 have instance storage.
+    _family('i3', ('large', 'xlarge', '2xlarge'))
+)
+
 
 # See also
 # http://boto3.readthedocs.io/en/latest/reference/services/ec2.html#EC2.ServiceResource.create_instances
@@ -52,7 +65,7 @@ CREATE_INSTANCE_DEFAULTS = {
                            'DeviceIndex': 0}],
     'ImageId': 'ami-FIXME',  # Must be set by our request
     'KeyName': 'cloud-init-integration',
-    'InstanceType': 't2.micro',
+    'InstanceType': DEFAULT_FLAVOR,
     'MaxCount': 1,  # Deploy 1 instance of this type
     'MinCount': 1,
     'Monitoring': { 'Enabled': False },
@@ -245,6 +258,11 @@ def get_parser():
     parser.add_argument(
         '-i', '--image-id', type=str, help='Specify the EC2 ami id to deploy')
     parser.add_argument(
+        '-t', '--type', type=str,
+        default=DEFAULT_FLAVOR,
+        help=('Specify a size/flavor/type to deploy. Some types are: %s' %
+              ', '.join(FLAVORS)))
+    parser.add_argument(
         '--deb-file', type=str, required=False, dest='deb_file',
         help='Provide a local deb for install on the instance')
     parser.add_argument(
@@ -255,8 +273,7 @@ def get_parser():
     parser.add_argument(
         '--pubkey-file', required=False, type=str, dest='pubkey_file',
         default=os.path.expanduser('~/.ssh/id_rsa.pub'),
-        help=('Specify a local directory where results of script output'
-              ' artifacts are saved'))
+        help=('Specify public key to use for launching'))
     parser.add_argument(
         '--script-artifacts-dir', type=str, dest='artifacts_dir',
         default=DEFAULT_LOCAL_ARTIFACT_DIR,
@@ -396,13 +413,15 @@ def ec2_create_secgroup(ec2, vpc_id, sec_group_name=None, ipv4_cidr=None,
 
 
 def ec2_create_instance(ec2, ami_id, region_zone, secgroup, subnet,
-                        user_data_file=None):
+                        flavor=None, user_data_file=None):
     """Create and instance and wait for started state."""
-    kwargs = CREATE_INSTANCE_DEFAULTS
+    kwargs = CREATE_INSTANCE_DEFAULTS.copy()
     kwargs['ImageId'] = ami_id
     kwargs['NetworkInterfaces'][0]['Groups'] = [secgroup.id]
     kwargs['NetworkInterfaces'][0]['SubnetId'] = subnet.id
     kwargs['Placement']['AvailabilityZone'] = region_zone
+    if flavor:
+        kwargs['InstanceType'] = flavor
     if user_data_file:
         if not os.path.exists(user_data_file):
             raise RuntimeError( 'user-data file {} does not exist'.format(user_data_file))
@@ -410,7 +429,9 @@ def ec2_create_instance(ec2, ami_id, region_zone, secgroup, subnet,
             kwargs['UserData'] = stream.read()
     [instance] = ec2.create_instances(**kwargs)
     # block until running
-    print('Waiting for EC2 instance initialization')
+    print('Waiting for EC2 instance initialization size=%s zone=%s' %
+          (kwargs['InstanceType'], region_zone))
+
     instance.wait_until_running(
         Filters=[{'Name': 'instance-state-name', 'Values': ['running']}])
     instance.reload()
@@ -440,7 +461,8 @@ def main():
         secgroup = ec2_create_secgroup(ec2, vpc.id)
         ec2_import_keypair(ec2, args.pubkey_file)
         instance = ec2_create_instance(
-            ec2, image_id, region_zone, secgroup, subnet, args.user_data_file)
+            ec2, image_id, region_zone, secgroup, subnet,
+            flavor=args.type, user_data_file=args.user_data_file)
     except NoCredentialsError as e:
         error('Credentials undefined or incorrect. Check ~/.aws/credentials')
 
