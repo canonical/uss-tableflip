@@ -443,20 +443,23 @@ def import_keypair(client, key_path, name=None):
        {'id': int, 'fingerprint': 'aa:bb:...', 'label': name,
         'createDate': 2017-11-29T14:32:35-06:00, 'modifyDate'; string}
     """
-    if name is None:
-        name = KEY_PAIR_NAME
-    existing = find_keypair_by_name(client, name)
-    if existing:
-        return existing
-    keymgr = SoftLayer.SshKeyManager(client)
     with open(key_path, 'r') as stream:
         key_material = stream.read()
     toks = key_material.split()
-    if len(toks) == 3:
-        # you can't upload a key more than once, but you can if you change
-        # the comment portion (user-name), so we'll just upload with our own.
-        toks[2] = "ci-pubkey"
-    key_material = ' '.join(toks)
+
+    if name is None:
+        if len(toks) == 3:
+            name = toks[2]
+        else:
+            error("Did not find a comment/name in %s\n" % key_path)
+
+    # you can't upload a key more than once, so look for one by this name.
+    existing = find_keypair_by_name(client, name)
+    if existing:
+        # should verify that its content is the same.
+        return existing
+
+    keymgr = SoftLayer.SshKeyManager(client)
     return keymgr.add_key(key_material, label=name)
 
 
