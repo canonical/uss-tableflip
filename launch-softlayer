@@ -576,11 +576,20 @@ def main():
         if not image_id:
             image_id = get_image_id(client, args.series, args.type)
         secgroup = create_secgroup(client)
-        keypair = import_keypair(client, args.pubkey_file)
     except SoftLayer.exceptions.SoftLayerAPIError as e:
-        error("Looks like credentials are bad. check ~/.softlayer\n"
-              "Check ~/.softlayer\n" + str(e))
+        sys.argv = ["slcli", "config", "setup"]
+        sys.stderr.write("%s\n\n" % e)
+        sys.stderr.write(
+            "Looks like credentials are bad.\n"
+            "Attempting to run '%s' to configure ~/.softlayer\n\n"
+            "Get your API Username and Key from:\n  %s\n\n" %
+            (' '.join(sys.argv),
+             "https://control.softlayer.com/account/user/profile"))
+        from SoftLayer.CLI.core import main
+        main()
+        sys.exit(1)  # just because we did not launch an instance.
 
+    keypair = import_keypair(client, args.pubkey_file)
     inst = create_instance(
         client, image_id, keyname=keypair['id'], hostname=None,
         region=args.region,
@@ -601,6 +610,9 @@ def main():
         instance.run_scripts(args.script_dir, args.artifacts_dir)
     if not args.keep_alive:
         instance.destroy()
+    else:
+        sys.stderr.write(
+            "Destroy instance with:\n  slcli virtual cancel %s\n" % inst['id'])
     return 0
 
 
