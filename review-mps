@@ -260,10 +260,11 @@ def merge_source_mp(lp, project, source_mp, commit_msg, upstream_branch_path):
 def set_bug_status(lp, project, commit_msg, bug_status):
     '''Close any bugs specifically called out in the commit message.'''
     bug_ids = re.findall(RE_LP_BUG_ID, commit_msg)
-    log('Setting status of bugs to {0}:\n{1}'.format(
-            bug_status,
-            '\n'.join('http://pad.lv/{0}'.format(bug_id)
-                      for bug_id in bug_ids)))
+    if bug_ids:
+        log('Setting status of bugs to {0}:\n{1}'.format(
+                bug_status,
+                '\n'.join('http://pad.lv/{0}'.format(bug_id)
+                          for bug_id in bug_ids)))
     if DRYRUN:
         return
     for bug_id in bug_ids:
@@ -300,7 +301,7 @@ def main():
             os.chdir(args.repo_dir)
         else:
             log('Re-using existing repo dir: {0}'.format(args.repo_dir))
-            os.chdir(args.repo_dir) 
+            os.chdir(args.repo_dir)
             # Refresh local copy of upstream master
             subp(['git', 'checkout', upstream_branch])
             subp(['git', 'pull'])
@@ -325,7 +326,7 @@ def main():
                 # Print redacted tox summary
                 log('\n'.join(tox_output.splitlines()[-8:]))
             commitish = subp(['git', 'log', '-n', '1', '--pretty=%H'])
-            if source_mp.queue_status != 'Merged':
+            if source_mp.queue_status != 'Merged' and not DRYRUN:
                 source_mp.setStatus(status='Merged', revid=commitish.strip())
                 source_mp.lp_save()
             log('✔: {merge_url}'.format(merge_url=source_mp.web_link))
