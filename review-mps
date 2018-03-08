@@ -12,6 +12,8 @@ import sys
 VERBOSITY = 0
 DRYRUN = False
 
+# TODO Add upstream tasks to bugs if they don't already exist
+# TODO add upstream commish link comment to the bug on Fix
 
 def error(message):
     if isinstance(message, bytes):
@@ -26,10 +28,12 @@ def log(message, verbosity=0):
        print(message)
 
 
-def subp(cmd):
+def subp(cmd, skip=False):
    log('$ {command}'.format(command=' '.join(cmd)), 0 if DRYRUN else 1)
    if DRYRUN:
-       return ''
+       return
+   if skip:
+       return
    proc = Popen(cmd, stdout=PIPE, stderr=PIPE)
    out, err = proc.communicate()
    if proc.returncode:
@@ -54,7 +58,7 @@ Your branch has been set to 'Work in progress'.
 Please set the branch back to 'Needs Review' after resolving the issues below.
 
 Thanks again,
-Your friendly neighborhood cloud-init robot.
+Your friendly neighborhood {project_name} robot.
 
 Please fix the following issues:
 ------------------------------
@@ -101,8 +105,14 @@ def get_parser():
         help=('The name of remote branch target into which we will merge.'
               ' Default: origin/master'))
     parser.add_argument(
-        '--notest', required=False, default=False, action='store_true',
-        help=('Whether to run tox before marking merged and fix committed'))
+        '--skip', default=[],  choices=['bugs', 'publish', 'tests'], nargs='*',
+        help=('Skip certain types of operations.'))
+    parser.add_argument(
+        '-v', '--verbose', required=False, default=False, action='store_true',
+        help=('Print all actions.'))
+    parser.add_argument(
+        '--push-remote', required=False, dest='pushremote',
+        help=('QA-only provide remote name into which you want to push'))
     return parser
 
 
@@ -135,7 +145,7 @@ def scrub_commit_msg(mp):
     return '\n'.join(commit_msg)
 
 
-def handle_commit_message_errors(source_mp, error_message):
+def handle_commit_message_errors(source_mp, error_message, project_name):
     '''Report commit message lints or errors on a merge proposal.
 
     Add a comment with errors, vote 'Needs Fixing' and mark the branch as
@@ -144,10 +154,11 @@ def handle_commit_message_errors(source_mp, error_message):
     @param source_mp: The MergeProposal object from Launchpad.
     @param error_message: Specific issue which needs fixing in the
         commit message.
+    @param project_name: String of the source project we are operating on.
     '''
-    source_path = source_mp.source_git_path.replace('refs/heads', '')
+    source_path = source_mp.source_git_path.replace('refs/heads/', '')
     content = content=COMMIT_MESSAGE_LINTS_TMPL.format(
-        branch_path=source_path, errors=error_message,
+        project_name=project_name, errors=error_message,
         max_line_length=GIT_MAX_WIDTH)
     log('✗: marked "Work in progress": {0}\n{1}'.format(
             source_mp.web_link, error_message))
@@ -228,7 +239,8 @@ def create_publish_branch(upstream, publish_branch):
     subp(['git', 'checkout', upstream, '-b', publish_branch])
 
 
-def merge_source_mp(lp, project, source_mp, commit_msg, upstream_branch_path):
+def merge_source_mp(lp, project, source_mp, commit_msg, upstream_branch_path,
+                    nobugs):
     '''Merge source_mp into the current local branch.
 
     Also mark the bugs referenced in the commit message as Fix committed.
@@ -254,10 +266,10 @@ def merge_source_mp(lp, project, source_mp, commit_msg, upstream_branch_path):
         ['git', 'log', '-n', '1', 'publish_source{0}'.format(source_path),
          '--pretty="%an <%ae>'])
     subp(['git', 'commit', '--all', '-F', 'commit.msg', '--author', author])
-    set_bug_status(lp, project, commit_msg, 'Fix Committed')
+    set_bug_status(lp, project, commit_msg, 'Fix Committed', nobugs)
 
 
-def set_bug_status(lp, project, commit_msg, bug_status):
+def set_bug_status(lp, project, commit_msg, bug_status, skip):
     '''Close any bugs specifically called out in the commit message.'''
     bug_ids = re.findall(RE_LP_BUG_ID, commit_msg)
     if bug_ids:
@@ -265,7 +277,7 @@ def set_bug_status(lp, project, commit_msg, bug_status):
                 bug_status,
                 '\n'.join('http://pad.lv/{0}'.format(bug_id)
                           for bug_id in bug_ids)))
-    if DRYRUN:
+    if DRYRUN or skip:
         return
     for bug_id in bug_ids:
         bug = lp.bugs[int(bug_id)]
@@ -278,9 +290,11 @@ def set_bug_status(lp, project, commit_msg, bug_status):
 
 def main():
     global DRYRUN
+    global VERBOSITY
     parser = get_parser()
     args = parser.parse_args()
     DRYRUN = args.dryrun
+    VERBOSITY = 1 if args.verbose else 0
     lp = Launchpad.login_with(
         "cloud-init git-merge tool", 'production', version='devel')
     lp_project = lp.projects(args.project_name)
@@ -314,24 +328,30 @@ def main():
         try:
             commit_msg = scrub_commit_msg(source_mp)
         except ValueError as e:
-            handle_commit_message_errors(source_mp, str(e))
+            handle_commit_message_errors(source_mp, str(e), args.project_name)
             exit_code = 1
             continue
         if args.merge:
             merge_source_mp(
-                lp, args.project_name, source_mp, commit_msg, args.upstream)
-            if not args.notest:
+                lp, args.project_name, source_mp, commit_msg, args.upstream,
+                'bugs' in args.skip)
+            if 'tests' not in args.skip:
                 log('Running tox test prior to marking merged')
                 tox_output = subp(['tox'])
                 # Print redacted tox summary
                 log('\n'.join(tox_output.splitlines()[-8:]))
             commitish = subp(['git', 'log', '-n', '1', '--pretty=%H'])
-            if source_mp.queue_status != 'Merged' and not DRYRUN:
+            if (source_mp.queue_status != 'Merged' and
+                not (DRYRUN or  'publish' in args.skip)):
                 source_mp.setStatus(status='Merged', revid=commitish.strip())
                 source_mp.lp_save()
+            if args.pushremote:  # Add remote push target
+                upstream_remote = args.pushremote
+            push_cmd = [
+                'git', 'push', upstream_remote,
+                'publish_target:{0}'.format(upstream_branch)]
+            subp(push_cmd, skip=bool('publish' in args.skip))
             log('✔: {merge_url}'.format(merge_url=source_mp.web_link))
-            subp(['git', 'push', args.repo_dir,
-                  'publish_target:{0}'.format(upstream_branch)])
     log('Merge reviews complete')
     return exit_code
 
