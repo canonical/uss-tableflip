@@ -51,6 +51,14 @@ GIT_REMOTE_PATH_TMPL = 'git+ssh://{lp_user}@git.launchpad.net/{project}'
 
 
 ### Comment templates
+BUG_MESSAGE_UPSTREAM_COMMIT_TMPL = '''
+An upstream commit landed for this bug.
+
+To view that commit see the following URL:
+https://git.launchpad.net/{project}/commit/?id={commitish}
+'''
+
+
 COMMIT_MESSAGE_LINTS_TMPL = '''
 Thank you for your merge proposal.
 
@@ -157,7 +165,7 @@ def handle_commit_message_errors(source_mp, error_message, project_name):
     @param project_name: String of the source project we are operating on.
     '''
     source_path = source_mp.source_git_path.replace('refs/heads/', '')
-    content = content=COMMIT_MESSAGE_LINTS_TMPL.format(
+    content = COMMIT_MESSAGE_LINTS_TMPL.format(
         project_name=project_name, errors=error_message,
         max_line_length=GIT_MAX_WIDTH)
     log('✗: marked "Work in progress": {0}\n{1}'.format(
@@ -343,6 +351,11 @@ def main():
             commitish = subp(['git', 'log', '-n', '1', '--pretty=%H'])
             if (source_mp.queue_status != 'Merged' and
                 not (DRYRUN or  'publish' in args.skip)):
+                content = BUG_MESSAGE_UPSTREAM_COMMIT_TMPL.format(
+                    commitish=commitish.strip()[:8], project=args.project_name)
+                source_mp.createComment(
+                    subject='Cloud-init upstream commit landed',
+		    content=content)
                 source_mp.setStatus(status='Merged', revid=commitish.strip())
                 source_mp.lp_save()
             if args.pushremote:  # Add remote push target
