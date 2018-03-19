@@ -124,13 +124,19 @@ def get_parser():
     return parser
 
 
-def scrub_commit_msg(mp):
-    '''Attempt to scrub commit message.
+def scrub_commit_msg(mp, source_path):
+    '''Attempt to scrub commit message and set commit message if unset.
 
     @raises: ValueError on invalid commit message format.
     '''
+    source_remote = 'publish_source'
+    commit_message = mp.commit_message
     if not mp.commit_message:
-        raise ValueError('No commit message in Launchpad')
+        log('Setting launchpad commit message to latest commit')
+        commit_message = subp(
+            ['git', 'log', '--pretty=%B',
+             '%s%s' % (source_remote, source_path), '-n', '1'])
+        mp.commit_message = commit_message
     lines = mp.commit_message.splitlines()
     errors = []
     if len(lines) > 1 and lines[1].strip() != '':
@@ -247,15 +253,10 @@ def create_publish_branch(upstream, publish_branch):
     subp(['git', 'checkout', upstream, '-b', publish_branch])
 
 
-def merge_source_mp(lp, project, source_mp, commit_msg, upstream_branch_path,
-                    nobugs):
-    '''Merge source_mp into the current local branch.
-
-    Also mark the bugs referenced in the commit message as Fix committed.
-    '''
+def fetch_source_remote(project, source_mp, source_path, upstream_branch_path):
+    '''Create and fetch get source remote.'''
     source_remote = 'publish_source'
     upstream_remote, _ = upstream_branch_path.split('/')
-    source_path = source_mp.source_git_path.replace('refs/heads', '')
     lp_user = re.match(RE_MERGE_URL_TMPL.format(project=project),
                        source_mp.web_link).group('lpuser')
     remotes, git_prefix = git_remotes(upstream_remote, project)
@@ -264,6 +265,14 @@ def merge_source_mp(lp, project, source_mp, commit_msg, upstream_branch_path,
     subp(['git', 'remote', 'add', source_remote,
           '{0}~{1}/{2}'.format(git_prefix, lp_user, project)])
     subp(['git', 'fetch', source_remote])
+
+
+def merge_source_mp(lp, project, source_mp, source_path, commit_msg, nobugs):
+    '''Merge source_mp into the current local branch.
+
+    Also mark the bugs referenced in the commit message as Fix committed.
+    '''
+    source_remote = 'publish_source'
     subp(['git', 'merge', '{0}{1}'.format(source_remote, source_path),
           '--squash'])
 
@@ -314,34 +323,35 @@ def main():
         return exit_code
     upstream_remote, upstream_branch = args.upstream.split('/')
 
-    if args.merge:
-        if not os.path.exists(args.repo_dir):
-            subp(['git', 'clone',
-                  GIT_REMOTE_PATH_TMPL.format(
-                      lp_user=args.git_user, project=args.project_name),
-                  args.repo_dir])
-            os.chdir(args.repo_dir)
-        else:
-            log('Re-using existing repo dir: {0}'.format(args.repo_dir))
-            os.chdir(args.repo_dir)
-            # Refresh local copy of upstream master
-            subp(['git', 'checkout', upstream_branch])
-            subp(['git', 'pull'])
-        create_publish_branch(args.upstream, 'publish_target')
+    if not os.path.exists(args.repo_dir):
+        subp(['git', 'clone',
+              GIT_REMOTE_PATH_TMPL.format(
+                  lp_user=args.git_user, project=args.project_name),
+              args.repo_dir])
+        os.chdir(args.repo_dir)
+    else:
+        log('Re-using existing repo dir: {0}'.format(args.repo_dir))
+        os.chdir(args.repo_dir)
+        # Refresh local copy of upstream master
+        subp(['git', 'checkout', upstream_branch])
+        subp(['git', 'pull'])
+    create_publish_branch(args.upstream, 'publish_target')
 
     if not args.all:
         source_mps = [prompt_source_mp(source_mps)]
     for source_mp in source_mps:
         source_path = source_mp.source_git_path.replace('refs/heads', '')
+        fetch_source_remote(
+            args.project_name, source_mp, source_path, args.upstream)
         try:
-            commit_msg = scrub_commit_msg(source_mp)
+            commit_msg = scrub_commit_msg(source_mp, source_path)
         except ValueError as e:
             handle_commit_message_errors(source_mp, str(e), args.project_name)
             exit_code = 1
             continue
         if args.merge:
             merge_source_mp(
-                lp, args.project_name, source_mp, commit_msg, args.upstream,
+                lp, args.project_name, source_mp, source_path, commit_msg,
                 'bugs' in args.skip)
             if 'tests' not in args.skip:
                 log('Running tox test prior to marking merged')
