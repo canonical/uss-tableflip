@@ -45,7 +45,7 @@ VALID_MP_STATUSES = [
     'Work in progress', 'Needs review', 'Approved', 'Rejected', 'Merged',
     'Code failed to merge', 'Queued', 'Superseded']
 GIT_MAX_WIDTH = 74
-RE_MERGE_URL_TMPL = r'https://code.launchpad.net/~(?P<lpuser>[-.a-z]+)/{project}/\+git/{project}/\+merge/\d+'
+RE_MERGE_URL_TMPL = r'https://code.launchpad.net/~(?P<lpuser>[^/]+)/{project}/\+git/{project}/\+merge/\d+'
 RE_LP_BUG_ID = r'LP: #(?P<id>\d+)'
 GIT_REMOTE_PATH_TMPL = 'git+ssh://{lp_user}@git.launchpad.net/{project}'
 
