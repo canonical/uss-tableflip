@@ -267,7 +267,7 @@ def fetch_source_remote(project, source_mp, source_path, upstream_branch_path):
     subp(['git', 'fetch', source_remote])
 
 
-def merge_source_mp(lp, project, source_mp, source_path, commit_msg, nobugs):
+def merge_source_mp(lp, project, source_mp, source_path, commit_msg):
     '''Merge source_mp into the current local branch.
 
     Also mark the bugs referenced in the commit message as Fix committed.
@@ -283,10 +283,9 @@ def merge_source_mp(lp, project, source_mp, source_path, commit_msg, nobugs):
         ['git', 'log', '-n', '1', 'publish_source{0}'.format(source_path),
          '--pretty="%an <%ae>'])
     subp(['git', 'commit', '--all', '-F', 'commit.msg', '--author', author])
-    set_bug_status(lp, project, commit_msg, 'Fix Committed', nobugs)
 
 
-def set_bug_status(lp, project, commit_msg, bug_status, skip):
+def set_bug_status(lp, project, commit_msg, bug_status, bug_comment, skip):
     '''Close any bugs specifically called out in the commit message.'''
     bug_ids = re.findall(RE_LP_BUG_ID, commit_msg)
     if bug_ids:
@@ -351,21 +350,23 @@ def main():
             continue
         if args.merge:
             merge_source_mp(
-                lp, args.project_name, source_mp, source_path, commit_msg,
-                'bugs' in args.skip)
+                lp, args.project_name, source_mp, source_path, commit_msg)
             if 'tests' not in args.skip:
                 log('Running tox test prior to marking merged')
                 tox_output = subp(['tox'])
                 # Print redacted tox summary
                 log('\n'.join(tox_output.splitlines()[-8:]))
             commitish = subp(['git', 'log', '-n', '1', '--pretty=%H'])
+            bug_comment = BUG_MESSAGE_UPSTREAM_COMMIT_TMPL.format(
+                commitish=commitish.strip()[:8], project=args.project_name)
+            set_bug_status(
+                lp, args.project_name, commit_msg, 'Fix Committed',
+                bug_comment, 'bugs' in args.skip)
             if (source_mp.queue_status != 'Merged' and
-                not (DRYRUN or  'publish' in args.skip)):
-                content = BUG_MESSAGE_UPSTREAM_COMMIT_TMPL.format(
-                    commitish=commitish.strip()[:8], project=args.project_name)
+                not (DRYRUN or 'publish' in args.skip)):
                 source_mp.createComment(
                     subject='Cloud-init upstream commit landed',
-		    content=content)
+		    content=bug_comment)
                 source_mp.setStatus(status='Merged', revid=commitish.strip())
                 source_mp.lp_save()
             if args.pushremote:  # Add remote push target
