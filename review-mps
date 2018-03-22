@@ -45,7 +45,7 @@ VALID_MP_STATUSES = [
     'Code failed to merge', 'Queued', 'Superseded']
 GIT_MAX_WIDTH = 74
 RE_MERGE_URL_TMPL = r'https://code.launchpad.net/~(?P<lpuser>[^/]+)/{project}/\+git/{project}/\+merge/\d+'
-RE_LP_BUG_ID = r'LP: #(?P<id>\d+)'
+RE_LP_BUG_IDS = 'LP:(,? #\d+)+\s+$'
 GIT_REMOTE_PATH_TMPL = 'git+ssh://{lp_user}@git.launchpad.net/{project}'
 
 
@@ -136,6 +136,7 @@ def scrub_commit_msg(mp, source_path):
             ['git', 'log', '--pretty=%B',
              '%s%s' % (source_remote, source_path), '-n', '1'])
         mp.commit_message = commit_message
+        mp.lp_save()
     lines = mp.commit_message.splitlines()
     errors = []
     if len(lines) > 1 and lines[1].strip() != '':
@@ -286,8 +287,15 @@ def merge_source_mp(lp, project, source_mp, source_path, commit_msg):
 
 def set_bug_status(lp, project, commit_msg, bug_status, bug_comment, skip):
     '''Close any bugs specifically called out in the commit message.'''
-    bug_ids = re.findall(RE_LP_BUG_ID, commit_msg)
+    bug_ids = []
+    for line in commit_msg.splitlines():
+        match = re.match(RE_LP_BUG_IDS, line)
+        if match:
+            bug_ids.extend(
+                [re.sub('#|,', '', bug)
+                for bug in match.group().split() if '#' in bug])
     if bug_ids:
+        bug_ids = set(bug_ids)
         log('Setting status of bugs to {0}:\n{1}'.format(
                 bug_status,
                 '\n'.join('http://pad.lv/{0}'.format(bug_id)
