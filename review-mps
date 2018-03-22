@@ -13,7 +13,6 @@ VERBOSITY = 0
 DRYRUN = False
 
 # TODO Add upstream tasks to bugs if they don't already exist
-# TODO add upstream commish link comment to the bug on Fix
 
 def error(message):
     if isinstance(message, bytes):
@@ -297,6 +296,7 @@ def set_bug_status(lp, project, commit_msg, bug_status, bug_comment, skip):
         return
     for bug_id in bug_ids:
         bug = lp.bugs[int(bug_id)]
+        bug.newMessage(content=bug_comment)
         for task in bug.bug_tasks:
             if task.bug_target_name == project:
                 if task.status != bug_status:
