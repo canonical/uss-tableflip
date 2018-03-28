@@ -125,6 +125,12 @@ new_pkg_debian="0ubuntu1"
 new_upstream_ver=$(git describe --abbrev=8 "${from_ref}")
 new_pkg_ver="${new_upstream_ver}-${new_pkg_debian}${sru_ver_suff}"
 
+case "$new_upstream_ver" in
+    *-[0-9]*-g[a-f0-9]*) new_msg="New upstream snapshot.";;
+    [0-9][0-9].[0-9]) new_msg="New upstream release.";;
+    *) fail "unrecognized upstream version '$new_upstream_ver'";;
+esac
+
 prev_upstream_ver=${prev_pkg_ver%-*}
 if [ "${prev_upstream_ver}" = "${new_upstream_ver}" ]; then
     echo "nothing to commit.  '$from_ref' is at ${new_upstream_ver}."
@@ -232,7 +238,7 @@ if [ -n "${refreshed}" ]; then
    for i in ${refreshed}; do echo "    + ${i##*/}"; done
 fi
 
-echo "  * New upstream snapshot."
+echo "  * $new_msg${sru_ver_suff:+ (LP: #SRU_BUG_NUMBER_HERE)}"
 git_log_to_dch < "$gitlog" ||
    fail "failed git_log_to_dch"
 cat <<EOF
@@ -261,6 +267,6 @@ case "$answer" in
    n|[Nn][oO]) fail;;
 esac
 
-msg="update changelog (new upstream snapshot $new_upstream_ver)."
+msg="update changelog (${new_msg%.} $new_upstream_ver)."
 git commit -m "$msg" debian/changelog ||
    fail "failed to commit '$msg'"
