@@ -28,7 +28,8 @@ def log(message, verbosity=0):
 
 
 def subp(cmd, skip=False):
-   log('$ {command}'.format(command=' '.join(cmd)), 0 if DRYRUN else 1)
+   log('$ {command}'.format(command=' '.join(cmd)),
+       verbosity=0 if (DRYRUN or skip) else 1)
    if DRYRUN:
        return
    if skip:
@@ -246,7 +247,7 @@ def git_remotes(upstream_remote, project):
 def create_publish_branch(upstream, publish_branch):
     '''Create clean publish branch target in the current git repo.'''
     branches = subp(['git', 'branch'])
-    upstream_remote, upstream_branch = upstream.split('/')
+    upstream_remote, upstream_branch = upstream.split('/', 1)
     if publish_branch in branches:
         subp(['git', 'checkout', upstream_branch])
         subp(['git', 'branch', '-D', 'publish_target'])
@@ -256,7 +257,7 @@ def create_publish_branch(upstream, publish_branch):
 def fetch_source_remote(project, source_mp, source_path, upstream_branch_path):
     '''Create and fetch get source remote.'''
     source_remote = 'publish_source'
-    upstream_remote, _ = upstream_branch_path.split('/')
+    upstream_remote, _ = upstream_branch_path.split('/', 1)
     lp_user = re.match(RE_MERGE_URL_TMPL.format(project=project),
                        source_mp.web_link).group('lpuser')
     remotes, git_prefix = git_remotes(upstream_remote, project)
@@ -322,13 +323,15 @@ def main():
     lp = Launchpad.login_with(
         "cloud-init git-merge tool", 'production', version='devel')
     lp_project = lp.projects(args.project_name)
+    upstream_remote, upstream_branch = args.upstream.split('/', 1)
     source_mps = [
-        mp for mp in lp_project.getMergeProposals(status=args.status)]
+        mp for mp in lp_project.getMergeProposals(status=args.status)
+        if upstream_branch in mp.target_git_path]
     exit_code = 0
     if not source_mps:
-        log('No merge proposals in {0} status.'.format(args.status))
+        log('No merge proposals in {0} status targeting {1} branch.'.format(
+                args.status, upstream_branch))
         return exit_code
-    upstream_remote, upstream_branch = args.upstream.split('/')
 
     if not os.path.exists(args.repo_dir):
         subp(['git', 'clone',
