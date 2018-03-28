@@ -71,6 +71,18 @@ git_log_to_dch() {
         print_commit "$subject" "$author" "$bugs"
     fi
 }
+
+run_quilt() {
+    local diffargs="-p ab --no-timestamps --no-index"
+    QUILT_PATCHES="debian/patches" \
+        QUILT_DIFF_OPTS="-p" \
+        QUILT_PATCH_OPTS="--reject-format=unified" \
+        QUILT_DIFF_ARGS="$diffargs --color=auto" \
+        QUILT_REFRESH_ARGS="$diffargs" \
+        LANG=C \
+        quilt --quiltrc - "$@"
+}
+
 cleanup() {
     [ ! -d "${TEMP_D}" ] || rm -Rf "${TEMP_D}"
 }
@@ -176,13 +188,13 @@ refreshed=""
 if [ -f "$dpseries" ]; then
     # refresh any patches.
     while :; do
-        npatch=$(quilt next 2>&1)
+        npatch=$(run_quilt next 2>&1)
         ret=$?
         [ $ret -eq 2 ] && break
         [ $ret -ne 0 ] && fail "quilt next returned $ret: $npatch"
-        out=$(quilt push 2>&1) ||
+        out=$(run_quilt push 2>&1) ||
             fail "patch $npatch does not apply: $out"
-        out=$(LANG=C quilt refresh) ||
+        out=$(run_quilt refresh -p ab) ||
             fail "patch $npatch failed refresh: $out"
     done
     refreshed=$(git diff --name-only debian/patches/)
