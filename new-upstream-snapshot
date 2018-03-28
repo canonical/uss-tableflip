@@ -116,6 +116,7 @@ prev_pkg_ver=$(dpkg-parsechangelog --show-field Version) ||
    fail "failed reading package version"
 pkg_name=$(dpkg-parsechangelog --show-field Source) ||
    fail "failed to read Source from changelog"
+dist=$(dpkg-parsechangelog --show-field Distribution)
 
 # if present, pull the '~16.04.x' off of the previous entry.
 sru_ver_suff=$(echo "$prev_pkg_ver" | sed 's,.*~\([0-9.]*\)[.][0-9]$,~\1.1,')
@@ -293,3 +294,12 @@ esac
 msg="update changelog (${new_msg%.} $new_upstream_ver)."
 git commit -m "$msg" debian/changelog ||
    fail "failed to commit '$msg'"
+
+tag=$(echo "ubuntu/$new_pkg_ver" | tr '~' '_')
+cat <<EOF
+wrote new-upstream-changes.txt for $pkg_name version ${new_pkg_ver}.
+release with:
+dch --release --distribution=$dist
+git commit -m "releasing $pkg_name version $new_pkg_ver" debian/changelog
+git tag $tag
+EOF
