@@ -1,10 +1,18 @@
 #!/bin/sh
 
+ORIG_TIP=""
 TEMP_D=""
 CR='
 '
 error() { echo "$@" 1>&2; }
-fail() { [ $# -eq 0 ] || error "$@"; exit 1; }
+fail() {
+    [ $# -eq 0 ] || error "$@";
+    if [ -n "$ORIG_TIP" ]; then 
+        error "reset to previous tip with: git reset --hard $ORIG_TIP"
+    fi
+    exit 1;
+}
+
 Usage() {
 cat <<EOF
 ${0##*/} [branch]
@@ -17,7 +25,10 @@ print_commit() {
     local subject="$1" author="$2" bugs="$3" aname="" buf="" abugs=""
     local indent="    - " indent2="      " ll=79
     aname=${author% <*}
-    [ "${aname}" = "Scott Moser" ] && aname=""
+    case "$aname" in
+        # core team members do not need credit in changelog.
+        Scott\ Moser|Chad\ Smith|Ryan\ Harper) aname="";;
+    esac
     abugs="${aname:+ [${aname}]}${bugs:+ (LP: ${bugs})}"
     if [ $((${#subject}+${#abugs})) -le $(($ll-${#indent})) ]; then
         echo "${indent}${subject}${abugs}"
@@ -67,10 +78,19 @@ cleanup() {
 from_ref=${1:-"master"}
 cur_branch=$(git rev-parse --abbrev-ref HEAD) ||
    fail "failed to get current branch"
+ORIG_TIP=$(git rev-parse HEAD) ||
+   fail "failed to get current tip"
 
 case "$cur_branch" in
     ubuntu/*) :;;
-    *) fail "You are on branch '$cur_branch', expect to be on ubuntu/*";;
+    *) 
+        if [ "${SKIP_BRANCH_NAME_CHECK:-0}" = "0" ]; then
+            error "You are on branch '$cur_branch', expect to be on ubuntu/*"
+            fail "skip this check with SKIP_BRANCH_NAME_CHECK=1"
+        else
+            error "skipping branch check. cur_branch=$cur_branch"
+        fi
+    ;;
 esac
 
 TEMP_D=$(mktemp -d) || fail "failed mktemp"
@@ -81,13 +101,17 @@ prev_pkg_ver=$(dpkg-parsechangelog --show-field Version) ||
 pkg_name=$(dpkg-parsechangelog --show-field Source) ||
    fail "failed to read Source from changelog"
 
+# if present, pull the '~16.04.x' off of the previous entry.
+sru_ver_suff=$(echo "$prev_pkg_ver" | sed 's,.*~\([0-9.]*\)[.][0-9]$,~\1.1,')
+[ "${sru_ver_suff}" = "${prev_pkg_ver}" ] && sru_ver_suff=""
+
 # turn 0.7.7-10-gbc2c326-0ubuntu1 into 'bc2c326'
 t=${prev_pkg_ver%-*}
 prev_pkg_hash=${t##*-g}
 
 new_pkg_debian="0ubuntu1"
 new_upstream_ver=$(git describe --abbrev=8 "${from_ref}")
-new_pkg_ver="${new_upstream_ver}-${new_pkg_debian}"
+new_pkg_ver="${new_upstream_ver}-${new_pkg_debian}${sru_ver_suff}"
 
 prev_upstream_ver=${prev_pkg_ver%-*}
 if [ "${prev_upstream_ver}" = "${new_upstream_ver}" ]; then
@@ -95,7 +119,20 @@ if [ "${prev_upstream_ver}" = "${new_upstream_ver}" ]; then
     exit 0
 fi
 
+prev_dist=$(dpkg-parsechangelog --show-field Distribution)
+if [ "$prev_dist" = "UNRELEASED" ]; then
+    prev_released_pkg_ver=$(
+        dpkg-parsechangelog --offset 1 --count=1 --show-field Version)
+    unreleased_changes=$(
+        dpkg-parsechangelog --count=1 --show-field Changes | tail -n +4)
+else
+    prev_released_pkg_ver="${prev_pkg_ver}"
+fi
+#echo "prev_released_pkg_ver=$prev_released_pkg_ver"
+#echo "unreleased=${unreleased_changes}"
+
 dpseries="debian/patches/series"
+drops=""
 if [ -e $dpseries ]; then
    drops=""
    while read bname extra; do
@@ -123,7 +160,7 @@ if [ -e $dpseries ]; then
       msg="$msg${CR}${CR}drop the following cherry picks:"
       for file in $drops; do
          git rm "$file" || fail "failed to git rm $file"
-         msg="${msg}$CR  $file"
+         msg="${msg}$CR  ${file##*/}"
       done
       git commit -m "$msg" "$dpseries" $drops
    fi
@@ -134,25 +171,72 @@ git merge "${from_ref}" -m "merge from $from_ref at $new_upstream_ver" ||
 clog="${TEMP_D}/changelog"
 gitlog="${TEMP_D}/gitlog"
 
+rm -Rf .pc
+refreshed=""
+if [ -f "$dpseries" ]; then
+    # refresh any patches.
+    while :; do
+        npatch=$(quilt next 2>&1)
+        ret=$?
+        [ $ret -eq 2 ] && break
+        [ $ret -ne 0 ] && fail "quilt next returned $ret: $npatch"
+        out=$(quilt push 2>&1) ||
+            fail "patch $npatch does not apply: $out"
+        out=$(LANG=C quilt refresh) ||
+            fail "patch $npatch failed refresh: $out"
+    done
+    refreshed=$(git diff --name-only debian/patches/)
+    quilt pop -a || fail "failed quilt pop -a"
+    rm -Rf .pc
+    if [ -n "$refreshed" ]; then
+        msg=$(echo "refresh patches"
+            echo
+            echo "refresh the following against upstream ${new_upstream_ver}:"
+            for i in ${refreshed}; do echo "  $i"; done)
+        git commit -m "$msg" $refreshed ||
+            fail "failed to commit refreshed patches: $refreshed"
+    fi
+fi
+
 git log --first-parent --no-decorate --format=full \
    "${prev_pkg_hash}..${from_ref}" >  "$gitlog" ||
    fail "failed git log ${prev_pkg_hash}..${from_ref}"
 
-cat >> "$clog" <<EOF
+{
+cat <<EOF
 $pkg_name ($new_pkg_ver) UNRELEASED; urgency=medium
 
-  * New upstream snapshot.
 EOF
-git_log_to_dch < "$gitlog" >> "$clog" ||
+if [ -n "${unreleased_changes}" ]; then
+    echo "${unreleased_changes}"
+fi
+if [ -n "$drops" ]; then
+    echo "  * Drop the following cherry picks in debian/patches."
+    echo "    They are now incorporated in the upstream source:"
+    for i in ${drops}; do echo "    + ${i##*/}"; done
+fi
+if [ -n "${refreshed}" ]; then
+   echo "  * Refresh patches against upstream:"
+   for i in ${refreshed}; do echo "    + ${i##*/}"; done
+fi
+
+echo "  * New upstream snapshot."
+git_log_to_dch < "$gitlog" ||
    fail "failed git_log_to_dch"
-cat >> "$clog" <<EOF
+cat <<EOF
 
  -- ${DEBFULLNAME} <$DEBEMAIL>  $(date -R)
 
 EOF
+} > "$clog"
 
-cat "$clog" "debian/changelog" > "$TEMP_D/newlog" &&
-   cp "$TEMP_D/newlog" "debian/changelog" ||
+{
+   cat "$clog" &&
+   sed -n "/${prev_released_pkg_ver}/,\$p" "debian/changelog"
+} > "${TEMP_D}/newlog" ||
+   fail "failed writing new changelog"
+
+cp "$TEMP_D/newlog" "debian/changelog" ||
    fail "failed replacing debian/changelog"
 
 dch -e || fail "dch -e exited $?"
@@ -162,7 +246,7 @@ git diff
 echo -n "Commit this change? (Y/n): "
 read answer || fail "failed to read answer"
 case "$answer" in
-   n|[Nn][oO]) exit 1;;
+   n|[Nn][oO]) fail;;
 esac
 
 msg="update changelog (new upstream snapshot $new_upstream_ver)."
