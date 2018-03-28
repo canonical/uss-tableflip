@@ -50,10 +50,13 @@ print_commit() {
 
 git_log_to_dch() {
     local line="" commit="" lcommit="" bugs=""
+    local skip_bugs=false
+    [ "$1" = "--skip-bugs" ] && skip_bugs=true && shift
     while :; do
         read line || break
         case "$line" in
             commit\ *)
+                $skip_bugs && bugs=""
                 if [ -n "$commit" ]; then
                     print_commit "$subject" "$author" "$bugs"
                 fi
@@ -67,6 +70,7 @@ git_log_to_dch() {
             "") [ -z "$subject" ] && read subject;;
         esac
     done
+    $skip_bugs && bugs=""
     if [ -n "$commit" ]; then
         print_commit "$subject" "$author" "$bugs"
     fi
@@ -116,6 +120,14 @@ pkg_name=$(dpkg-parsechangelog --show-field Source) ||
 # if present, pull the '~16.04.x' off of the previous entry.
 sru_ver_suff=$(echo "$prev_pkg_ver" | sed 's,.*~\([0-9.]*\)[.][0-9]$,~\1.1,')
 [ "${sru_ver_suff}" = "${prev_pkg_ver}" ] && sru_ver_suff=""
+
+sru_bug_fillstr="SRU_BUG_NUMBER_HERE"
+sru_bug_string=""
+skip_bugs=""
+if [ -n "$sru_ver_suff" ]; then
+    sru_bug_string="(LP: #$sru_bug_fillstr)"
+    skip_bugs="--skip-bugs"
+fi
 
 # turn 0.7.7-10-gbc2c326-0ubuntu1 into 'bc2c326'
 t=${prev_pkg_ver%-*}
@@ -238,8 +250,8 @@ if [ -n "${refreshed}" ]; then
    for i in ${refreshed}; do echo "    + ${i##*/}"; done
 fi
 
-echo "  * $new_msg${sru_ver_suff:+ (LP: #SRU_BUG_NUMBER_HERE)}"
-git_log_to_dch < "$gitlog" ||
+echo "  * $new_msg${sru_bug_string:+ ${sru_bug_string}}"
+git_log_to_dch $skip_bugs < "$gitlog" ||
    fail "failed git_log_to_dch"
 cat <<EOF
 
@@ -247,6 +259,9 @@ cat <<EOF
 
 EOF
 } > "$clog"
+
+git_log_to_dch < "$gitlog" > "new-upstream-changes.txt" ||
+   fail "failed git_log_to_dch"
 
 {
    cat "$clog" &&
@@ -258,6 +273,14 @@ cp "$TEMP_D/newlog" "debian/changelog" ||
    fail "failed replacing debian/changelog"
 
 dch -e || fail "dch -e exited $?"
+
+if grep -q "$sru_bug_fillstr" debian/changelog; then
+    echo "You did not fill in an SRU bug string.  Add one now."
+    read answer
+    dch -e
+    grep -q "$sru_bug_fillstr" debian/changelog &&
+       fail "You didn't fix it (debian/changelog has $sru_bug_string)"
+fi
 
 git diff
 
