@@ -1,9 +1,8 @@
 #!/bin/bash
-# Copy of Scott Moser's log2dch for generating deb changelogs from git log
-# Publication: https://gist.github.com/smoser/813c84bc7a79efc75d3f7fc2f383f12f
 
 VERBOSITY=0
 TEMP_D=""
+COMMIT_URL=${COMMIT_URL:-https://git.launchpad.net/cloud-init/commit/?id=}
 
 error() { echo "$@" 1>&2; }
 fail() { local r=$?;  [ $r -eq 0 ] && r=1; failrc "$r" "$@"; }
@@ -39,7 +38,7 @@ Usage: ${0##*/} [ options ] [input-file]
 
   * git based cloud-init (git clone http://git.launchpad.net/cloud-init)
 
-      $ git log HEAD~5.. ) | log2dch
+      $ git log HEAD~5.. | log2dch
         - tests: execute: support command as string [Joshua Powers]
         - schema and docs: Add jsonschema to resizefs and bootcmd modules
           [Chad Smith]
@@ -64,12 +63,13 @@ debug() {
 
 bzr_log_to_dch() {
     local line="" commit="" bugs="" bug=""
+    local func="${1:-print_dch}"
     while :; do
         read line || break
         case "$line" in
             revno:\ *)
                 if [ -n "$commit" ]; then
-                    print_commit "$subject" "$author" "$bugs"
+                    $func "$commit" "$subject" "$author" "$bugs"
                 fi
                 commit=${line#*: }
                 bugs=""
@@ -86,13 +86,48 @@ bzr_log_to_dch() {
         esac
     done
     if [ -n "$commit" ]; then
-        print_commit "$subject" "$author" "$bugs"
+        $func "$commit" "$subject" "$author" "$bugs"
     fi
 }
 
-print_commit() {
-    local subject="$1" author="$2" bugs="$3" aname="" abugs=""
+
+print_hackio() {
+    local commit="$1" subject="$2" author="$3" bugs="$4" aname="" abugs=""
+    local buf="" bug="" t=""
+    local url="${COMMIT_URL}"
+    t=${commit#????????}
+    local bugmd="" pre=""
+    for bug in ${bugs}; do
+        bug=${bug%,}
+        [ -z "$bugmd" ] && pre="LP: "
+        bugmd="${bugmd}[$pre${bug}](https://pad.lv/$bug),"
+    done
+	bugmd=${bugmd%,}
+    t=${commit#????????}
+    buf="- ${bugmd:+${bugmd} }${subject}"
+    buf="${buf} \[[${commit%$t}]($url${commit%$t})\]"
+    echo "$buf"
+}
+
+print_trello() {
+    local commit="$1" subject="$2" author="$3" bugs="$4" aname="" abugs=""
+    local buf="" bug="" t=""
+    local url="${COMMIT_URL}"
+    t=${commit#????????}
+    buf="[${commit%$t}](${url}${commit%$t})"
+    for bug in ${bugs}; do
+        bug=${bug%,}
+        buf="${buf:+${buf} }[${bug}](http://pad.lv/$bug)"
+    done
+    buf="${buf:+${buf} }$subject"
+    echo "$buf"
+}
+
+print_dch() {
+    local commit="$1" subject="$2" author="$3" bugs="$4" aname="" abugs=""
     local indent="    - " indent2="      " ll=79
+    local i=""
+    #( for i in ${bugs}; do echo ${i%,}; done); return
     aname=${author% <*}
     [ "${aname}" = "Scott Moser" ] && aname=""
     abugs="${aname:+ [${aname}]}${bugs:+ (LP: ${bugs})}"
@@ -116,14 +151,15 @@ print_commit() {
 
 git_log_to_dch() {
     local line="" commit="" bugs=""
+    local func=${1:-print_dch}
     while :; do
         read line || break
         case "$line" in
             commit\ *)
                 if [ -n "$commit" ]; then
-                    print_commit "$subject" "$author" "$bugs"
+                    "$func" "$commit" "$subject" "$author" "$bugs"
                 fi
-                commit=${line#*: }
+                commit=${line#commit }
                 bugs=""
                 author=""
                 subject=""
@@ -134,7 +170,7 @@ git_log_to_dch() {
         esac
     done
     if [ -n "$commit" ]; then
-        print_commit "$subject" "$author" "$bugs"
+        $func "$commit" "$subject" "$author" "$bugs"
     fi
 }
 
@@ -145,19 +181,22 @@ assert_temp_d() {
 
 main() {
 	local short_opts="ht:v"
-	local long_opts="help,vcs:,verbose"
+	local long_opts="commit-url:,hackio,help,trello,vcs:,verbose"
 	local getopt_out=""
 	getopt_out=$(getopt --name "${0##*/}" \
 		--options "${short_opts}" --long "${long_opts}" -- "$@") &&
 		eval set -- "${getopt_out}" ||
 		{ bad_Usage; return; }
 
-	local cur="" next="" vcs="auto" input="-"
+	local cur="" next="" vcs="auto" input="-" omode="dch"
 
 	while [ $# -ne 0 ]; do
 		cur="$1"; next="$2";
 		case "$cur" in
 			-h|--help) Usage ; exit 0;;
+			   --trello) omode="trello";;
+			   --hackio) omode="hackio";;
+			   --commit-url) COMMIT_URL="$next";;
 			-t|--vcs) vcs="$next";
 				case "$vcs" in
 					auto|git|bzr)
@@ -198,8 +237,13 @@ main() {
 			{ error "failed to open $input for reading"; return 1; }
 	fi
 
+    case "$omode" in
+        trello) printer="print_trello";;
+        hackio) printer="print_hackio";;
+        *) printer="print_dch";;
+    esac
 	local func="${vcs}_log_to_dch"
-	"$func"
+	"$func" "$printer"
 	return
 }
 
