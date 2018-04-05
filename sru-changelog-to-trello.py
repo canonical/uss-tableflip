@@ -8,6 +8,10 @@ import re
 def get_parser():
    parser = argparse.ArgumentParser()
    parser.add_argument('-c', '--changelog', required=True, help='Changelog file to parser')
+   parser.add_argument(
+       '-n', '--num-sections', required=False, default=1, type=int,
+       dest='numSections',
+       help='Number of changelog sections to parse. Default: 1.')
    return parser
 
 
@@ -22,7 +26,7 @@ def main():
   for item in content.split('- '):
     if section_marker in item:
         section_count += 1
-        if section_count > 1:
+        if section_count > args.numSections:
             break
         continue
     # strip all whitespace/newlines
