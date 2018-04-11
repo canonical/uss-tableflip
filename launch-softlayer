@@ -39,6 +39,7 @@ DEFAULT_SERIES = 'xenial'
 SECGROUP_NAME = 'Cloud-init integration test secgroup'
 SECGROUP_DESCRIPTION = 'Security group setting ssh ingress to instances'
 
+UBUNTU_VERSIONS = {'trusty': '14.04', 'xenial': '16.04', 'bionic': '18.04'}
 
 # Directory where script artifacts can be saved for sync
 DEFAULT_LOCAL_ARTIFACT_DIR = 'test-artifacts'
@@ -316,6 +317,33 @@ class SoftLayerInstance(object):
         self.instance.stop()
 
 
+def get_image_guid_by_name(client, name):
+    """Return the newest image with given name."""
+    imgr = SoftLayer.ImageManager(client)
+    images = sorted(imgr.list_private_images(name=name),
+                    key=datetime_for_image, reverse=True)
+    guid = None
+    if images:
+        src = "private"
+        guid = images[0]['globalIdentifier']
+    else:
+        src = "public"
+        images = sorted(imgr.list_public_images(name=name),
+                        key=datetime_for_image, reverse=True)
+
+    if not images:
+        raise RuntimeError(
+            "No public or private images matching name '%s' found" % name)
+
+    guid = images[0]['globalIdentifier']
+    if len(images) > 1:
+        print("Selected newest %s image '%s' created on '%s' from %d "
+              "with name '%s'" %
+              (src, guid, datetime_for_image(images[0]), len(images), name))
+
+    return guid
+
+
 def image_id_to_guid(image, client):
     try:
         uuid.UUID(image)
@@ -330,7 +358,14 @@ def image_id_to_guid(image, client):
     return image_details['globalIdentifier']
 
 
-def get_image_id(client, series_name, flavor):
+def datetime_for_image(img):
+    # create Date looks like 2016-10-24T10:45:25-05:00
+    # replacing the ':' which arent easily handled in a timezone
+    return datetime.datetime.strptime(
+        img['createDate'].replace(":", ""), '%Y-%m-%dT%H%M%S%z')
+
+
+def get_ubuntu_image_id(client, series_name, flavor):
     """Return a valid image id for the given series and region_name.
 
     Options can be seen in 'slcli image list'.
@@ -339,8 +374,7 @@ def get_image_id(client, series_name, flavor):
     size = int(flavor.rpartition('X')[2])
     arch = "64"
     account = 208938
-    rels = {'trusty': '14.04', 'xenial': '16.04', 'bionic': '18.04'}
-    version = rels[series_name]
+    version = UBUNTU_VERSIONS[series_name]
     # basically going to get the newest image that matches this template.
     # 25GB - Ubuntu / Ubuntu / 16.04-64 Minimal for VSI
     tmpl = "{size}GB - Ubuntu / Ubuntu / {version}-{arch} Minimal for VSI"
@@ -349,13 +383,7 @@ def get_image_id(client, series_name, flavor):
         name=tmpl.format(size=size, version=version, arch=arch))
     imgs = [i for i in imgs if i['accountId'] == account]
 
-    def getdate(i):
-        # create Date looks like 2016-10-24T10:45:25-05:00
-        # replacing the ':' which arent easily handled in a timezone
-        return datetime.datetime.strptime(
-            i['createDate'].replace(":", ""), '%Y-%m-%dT%H%M%S%z')
-
-    imgs = sorted(imgs, key=getdate, reverse=True)
+    imgs = sorted(imgs, key=datetime_for_image, reverse=True)
     print(imgs[0])
     return imgs[0]['globalIdentifier']
 
@@ -376,7 +404,8 @@ def get_parser():
     parser.add_argument(
         '-i', '--image-id', type=str,
         help='Specify the image id to deploy. Use "os:xenial" to launch by '
-             'os_code. Or use "xenial" or image id (integer) or guid (uuid)'),
+             'os_code. Or use ubuntu release name (%s), image id (integer), '
+             'guid (uuid), or name' % list(UBUNTU_VERSIONS.keys()))
     parser.add_argument(
         '--deb-file', type=str, required=False, dest='deb_file',
         help='Provide a local deb for install on the instance')
@@ -516,7 +545,10 @@ def create_instance(client, image, keyname, flavor=None,
         'userdata': userdata,
         }
     )
-    if image.startswith("os:"):
+    if image in UBUNTU_VERSIONS:
+        # 'xenial' gets converted to well known public template name.
+        opts['image_id'] = get_ubuntu_image_id(client, image, flavor)
+    elif image.startswith("os:"):
         # image is 'os:' meaning launch by 'os' (os:UBUNTU_16_64)
         # Get a list with:
         # opts = vsmgr.get_create_options()
@@ -524,12 +556,11 @@ def create_instance(client, image, keyname, flavor=None,
         #    for k in opts['operatingSystems']]
         opts['os_code'] = get_os_name(image)
     else:
-        # if image is an integer, then we have to get the guid for that.
         try:
-            image = image_id_to_guid(image, client)
-        except ValueError as e:
-            image = get_image_id(client, image, flavor)
-        opts['image_id'] = image
+            # this handles int or actual guid.
+            opts['image_id'] = image_id_to_guid(image, client)
+        except ValueError:
+            opts['image_id'] = get_image_guid_by_name(client, image)
 
     if security_groups is not None:
         opts['public_security_groups'] = security_groups
@@ -577,7 +608,7 @@ def main():
     client = SoftLayer.Client()
     try:
         if not image_id:
-            image_id = get_image_id(client, args.series, args.type)
+            image_id = get_ubuntu_image_id(client, args.series, args.type)
         secgroup = create_secgroup(client)
     except SoftLayer.exceptions.SoftLayerAPIError as e:
         sys.argv = ["slcli", "config", "setup"]
