@@ -7,11 +7,17 @@ import re
 
 def get_parser():
    parser = argparse.ArgumentParser()
-   parser.add_argument('-c', '--changelog', required=True, help='Changelog file to parser')
+   parser.add_argument(
+       '-c', '--changelog', required=True, help='Changelog file to parse')
    parser.add_argument(
        '-n', '--num-sections', required=False, default=1, type=int,
        dest='numSections',
        help='Number of changelog sections to parse. Default: 1.')
+   parser.add_argument(
+       '-a', '--all-changes', required=False, default=False,
+       action='store_true', dest='allChanges',
+       help=('Include all changes with the section. Default: limit entries to'
+             ' those containing bugs.'))
    return parser
 
 
@@ -29,8 +35,8 @@ def main():
         if section_count > args.numSections:
             break
         continue
-    # strip all whitespace/newlines
-    changelog_item = ' '.join(item.split())
+    # strip all whitespace/newlines and truncate end of section committer
+    changelog_item = ' '.join([i for i in item.split() if i != '-'])
     m = re.match(r'.*\(LP: #(?P<bugs>[\d ,#]+)\).*', changelog_item)
     if m:
         bugnums = m.group('bugs').split(', #')
@@ -40,6 +46,8 @@ def main():
         # Strip bug details from end and put it as markdown in prefix
         summary = re.sub(r'\(LP:[^)]+\)', '', changelog_item)
         print(' - {0} {1}'.format(bug_prefix, summary))
+    elif args.allChanges:
+        print(' - {0}'.format(changelog_item))
 
 if __name__ == '__main__':
     main()
