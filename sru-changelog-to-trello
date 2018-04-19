@@ -14,6 +14,10 @@ def get_parser():
        dest='numSections',
        help='Number of changelog sections to parse. Default: 1.')
    parser.add_argument(
+       '-p', '--project-name', required=False, default='cloud-init', type=str,
+       dest='projectName',
+       help='Changelog file to parse')
+   parser.add_argument(
        '-a', '--all-changes', required=False, default=False,
        action='store_true', dest='allChanges',
        help=('Include all changes with the section. Default: limit entries to'
@@ -27,7 +31,7 @@ def main():
   with open(args.changelog, 'rb') as stream:
     content = stream.read()
 
-  section_marker = 'cloud-init ('
+  section_marker = '{projectName} ('.format(projectName=args.projectName)
   section_count = 0
   for item in content.split('- '):
     if section_marker in item:
