@@ -18,6 +18,10 @@ def get_parser():
        dest='projectName',
        help='Changelog file to parse')
    parser.add_argument(
+       '-f', '--format', required=False, default='trello', 
+       choices=['trello', 'release-notes'],
+       help='Output format type. Default: trello.')
+   parser.add_argument(
        '-a', '--all-changes', required=False, default=False,
        action='store_true', dest='allChanges',
        help=('Include all changes with the section. Default: limit entries to'
@@ -42,16 +46,22 @@ def main():
     # strip all whitespace/newlines and truncate end of section committer
     changelog_item = ' '.join([i for i in item.split() if i != '-'])
     m = re.match(r'.*\(LP: #(?P<bugs>[\d ,#]+)\).*', changelog_item)
+    if args.format == 'trello':
+        output_tmpl = ' - {bug_fmt}{summary}'
+        bug_tmpl = '[LP: #{bug}](https://bugs.launchpad.net/bugs/{bug}) '
+    elif args.format == 'release-notes':
+        output_tmpl = ' - {summary}{bug_fmt}'
+        bug_tmpl = '([[https://bugs.launchpad.net/bugs/{bug}|{bug}]]) '
     if m:
         bugnums = m.group('bugs').split(', #')
-        bug_prefix = ''.join([
-            '[LP: #{bug}](http://pad.lv/{bug}) '.format(bug=bugnum)
-            for bugnum in bugnums])
-        # Strip bug details from end and put it as markdown in prefix
         summary = re.sub(r'\(LP:[^)]+\)', '', changelog_item)
-        print(' - {0} {1}'.format(bug_prefix, summary))
-    elif args.allChanges:
-        print(' - {0}'.format(changelog_item))
+        bug_fmt = ''.join([bug_tmpl.format(bug=bugnum) for bugnum in bugnums])
+    else:
+        bug_fmt = ''
+        summary = changelog_item
+
+    if bug_fmt or args.allChanges:
+        print(output_tmpl.format(bug_fmt=bug_fmt, summary=summary))
 
 if __name__ == '__main__':
     main()
