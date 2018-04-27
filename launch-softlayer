@@ -572,23 +572,36 @@ def create_instance(client, image, keyname, flavor=None,
 
     print('Waiting for instance initialization (%s)' % instance['id'])
     printed_addr = False
+    last_status = None
     while True:
-        ready = vsmgr.wait_for_ready(instance['id'], limit=20)
+        ready = vsmgr.wait_for_ready(instance['id'], limit=5)
         if ready:
             finish = time.time()
             break
         data = vsmgr.get_instance(instance['id'])
-        status = data.get('activeTransaction', {}).get(
-            'transactionStatus', {}).get("name", "no-status")
-        print("Not ready yet [%ds]. %s" %
-              (int(time.time() - start), str(status)))
         if not printed_addr and data.get('primaryIpAddress'):
+            if last_status:
+                sys.stdout.write("\n")
+                last_status = None
             print("primary ip: %s" % data['primaryIpAddress'])
             printed_addr = True
+
+        status = data.get('activeTransaction', {}).get(
+            'transactionStatus', {}).get("name", "no-status")
+        if status == last_status:
+            sys.stdout.write(".")
+        else:
+            if last_status:
+                sys.stdout.write("\n")
+            sys.stdout.write(
+                "[%3ds] %s" % (int(time.time() - start), str(status)))
+        sys.stdout.flush()
+        last_status = status
+
         # print(json.dumps(data, indent=1) + "\n")
 
     data = vsmgr.get_instance(instance['id'])
-    print("Got %s at %s.  took %.2f seconds" % (
+    print("\nGot %s at %s.  took %.2f seconds" % (
           data['id'], data['primaryIpAddress'],
           (finish - start)))
     return data
