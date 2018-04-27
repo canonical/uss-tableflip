@@ -150,15 +150,18 @@ if [ "${prev_upstream_ver}" = "${new_upstream_ver}" ]; then
     exit 0
 fi
 
-prev_dist=$(dpkg-parsechangelog --show-field Distribution)
-if [ "$prev_dist" = "UNRELEASED" ]; then
+if [ "$dist" = "UNRELEASED" ]; then
     prev_released_pkg_ver=$(
         dpkg-parsechangelog --offset 1 --count=1 --show-field Version)
     unreleased_changes=$(
         dpkg-parsechangelog --count=1 --show-field Changes | tail -n +4)
+    prev_dist=$(
+         dpkg-parsechangelog --offset 1 --count=1 --show-field Distribution)
 else
     prev_released_pkg_ver="${prev_pkg_ver}"
+    prev_dist="$dist"
 fi
+
 #echo "prev_released_pkg_ver=$prev_released_pkg_ver"
 #echo "unreleased=${unreleased_changes}"
 
@@ -299,7 +302,7 @@ tag=$(echo "ubuntu/$new_pkg_ver" | tr '~' '_')
 cat <<EOF
 wrote new-upstream-changes.txt for $pkg_name version ${new_pkg_ver}.
 release with:
-dch --release --distribution=$dist
+dch --release --distribution=${prev_dist}
 git commit -m "releasing $pkg_name version $new_pkg_ver" debian/changelog
 git tag $tag
 EOF
