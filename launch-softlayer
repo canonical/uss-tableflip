@@ -455,13 +455,17 @@ def get_parser():
     return parser
 
 
-def find_keypair_by_name(client, name=None):
-    if name is None:
-        name = KEY_PAIR_NAME
+def find_keypair_by(client, label=None, content=None):
+    if label is None and content is None:
+        raise ValueError("Empty label and content.")
+
     keymgr = SoftLayer.SshKeyManager(client)
-    keys = [k for k in keymgr.list_keys(label=name)]
-    if keys:
-        return keys[0]
+    for key in keymgr.list_keys():
+        if label and key.get('label') == label:
+            return key
+        if content and key.get('key') == content:
+            return key
+
     return None
 
 
@@ -482,16 +486,17 @@ def import_keypair(client, key_path, name=None):
         else:
             error("Did not find a comment/name in %s\n" % key_path)
 
-    # you can't upload a key more than once, so look for one by this name.
-    existing = find_keypair_by_name(client, name)
+    # you can't upload a key with the same label more than once.
+    # so check to make sure this isnt already uploaded.
+    existing = find_keypair_by(client, content=key_material)
     if existing:
-        # should verify that its content is the same.
+        print("Using existing key with id=%s and label=%s and key"
+              " matching content of %s" %
+              (existing['id'], existing['label'], key_path))
         return existing
 
+    print("Adding key with label %s and content from %s" % (name, key_path))
     keymgr = SoftLayer.SshKeyManager(client)
-    for k in keymgr.list_keys():
-        if k['key'] == key_material:
-            return k
     return keymgr.add_key(key_material, label=name)
 
 
@@ -538,7 +543,7 @@ def create_instance(client, image, keyname, flavor=None,
     try:
         ssh_keys = [int(keyname)]
     except TypeError:
-        ssh_keys = find_keypair_by_name(client, keyname)['id']
+        ssh_keys = find_keypair_by(client, label=keyname)['id']
 
     opts.update({
         'local_disk': is_local_disk_flavor(flavor), 'flavor': flavor,
