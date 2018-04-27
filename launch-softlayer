@@ -473,7 +473,7 @@ def import_keypair(client, key_path, name=None):
         'createDate': 2017-11-29T14:32:35-06:00, 'modifyDate'; string}
     """
     with open(key_path, 'r') as stream:
-        key_material = stream.read()
+        key_material = stream.read().strip()
     toks = key_material.split()
 
     if name is None:
@@ -489,6 +489,9 @@ def import_keypair(client, key_path, name=None):
         return existing
 
     keymgr = SoftLayer.SshKeyManager(client)
+    for k in keymgr.list_keys():
+        if k['key'] == key_material:
+            return k
     return keymgr.add_key(key_material, label=name)
 
 
@@ -629,8 +632,10 @@ def main():
         sys.stderr.write(
             "Looks like credentials are bad.\n"
             "Attempting to run '%s' to configure ~/.softlayer\n\n"
+            "First click the generate link @ %s"
             "Get your API Username and Key from:\n  %s\n\n" %
             (' '.join(sys.argv),
+             "https://control.softlayer.com/account/users",
              "https://control.softlayer.com/account/user/profile"))
         from SoftLayer.CLI.core import main
         main()
