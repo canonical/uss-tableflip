@@ -37,7 +37,7 @@ def main():
 
   section_marker = '{projectName} ('.format(projectName=args.projectName)
   section_count = 0
-  for item in content.split('- '):
+  for item in re.split('[*-] ', content):
     if section_marker in item:
         section_count += 1
         if section_count > args.numSections:
