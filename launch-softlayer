@@ -34,7 +34,6 @@ if _missing_deps:
 DEFAULT_REGION = 'dal05'
 DEFAULT_FLAVOR = 'B1_1X4X100'
 DEFAULT_FLAVOR = 'C1_1X1X25'
-KEY_PAIR_NAME = 'cloud-init-integration'
 DEFAULT_SERIES = 'xenial'
 SECGROUP_NAME = 'Cloud-init integration test secgroup'
 SECGROUP_DESCRIPTION = 'Security group setting ssh ingress to instances'
@@ -325,7 +324,6 @@ def get_image_guid_by_name(client, name):
     guid = None
     if images:
         src = "private"
-        guid = images[0]['globalIdentifier']
     else:
         src = "public"
         images = sorted(imgr.list_public_images(name=name),
@@ -340,6 +338,7 @@ def get_image_guid_by_name(client, name):
         print("Selected newest %s image '%s' created on '%s' from %d "
               "with name '%s'" %
               (src, guid, datetime_for_image(images[0]), len(images), name))
+    print(images[0])
 
     return guid
 
@@ -419,6 +418,10 @@ def get_parser():
         default=os.path.expanduser('~/.ssh/id_rsa.pub'),
         help=('Specify a local directory where results of script output'
               ' artifacts are saved'))
+    parser.add_argument(
+        '--hostname', required=False, type=str, dest='hostname',
+        default=None,
+        help=('Specify the hostname.  Default is to generate with petname.'))
     parser.add_argument(
         '--script-artifacts-dir', type=str, dest='artifacts_dir',
         default=DEFAULT_LOCAL_ARTIFACT_DIR,
@@ -648,7 +651,7 @@ def main():
 
     keypair = import_keypair(client, args.pubkey_file)
     inst = create_instance(
-        client, image_id, keyname=keypair['id'], hostname=None,
+        client, image_id, keyname=keypair['id'], hostname=args.hostname,
         region=args.region,
         flavor=args.type,
         security_groups=secgroup, user_data_file=args.user_data_file)
