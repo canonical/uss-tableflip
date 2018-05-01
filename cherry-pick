@@ -81,10 +81,15 @@ git_log_to_dch() {
     fi
 }
 
-mquilt() {
-    QUILT_REFRESH_ARGS="-p ab --no-timestamps --no-index" \
-        QUILT_PATCHES="debian/patches" \
-        quilt --quiltrc=/dev/null "$@"
+run_quilt() {
+    local diffargs="-p ab --no-timestamps --no-index"
+    QUILT_PATCHES="debian/patches" \
+        QUILT_DIFF_OPTS="-p" \
+        QUILT_PATCH_OPTS="--reject-format=unified" \
+        QUILT_DIFF_ARGS="$diffargs --color=auto" \
+        QUILT_REFRESH_ARGS="$diffargs" \
+        LANG=C \
+        quilt --quiltrc - "$@"
 }
 
 main() {
@@ -146,7 +151,7 @@ main() {
     fi
 
     if [ -e "$series" ]; then
-        if out=$(mquilt applied 2>&1); then
+        if out=$(run_quilt applied 2>&1); then
             error "there are quilt patches applied!"
             error "$out"
             return 1
@@ -159,9 +164,9 @@ main() {
     echo "$fname" >> "$series" ||
         { error "failed to write to $series"; return 1; }
 
-    mquilt push "$fname" ||
+    run_quilt push "$fname" ||
         { error "patches do not cleanly apply"; return 1; }
-    mquilt refresh && mquilt pop -a ||
+    run_quilt refresh && run_quilt pop -a ||
         { error "failed to refresh or pop quilt"; return 1; }
 
     local message=""
