@@ -26,7 +26,7 @@ Things that need to be considered:
 
  * **backwards incompatible changes.**  Any backwards incompatible changes in upstream must be reverted in a stable release.  Such changes are allowed in the Ubuntu development release, but cannot be SRU'd.  As an example of such a change see [debian/patches/azure-use-walinux-agent.patch](https://git.launchpad.net/cloud-init/tree/debian/patches/azure-use-walinux-agent.patch?h=ubuntu/xenial) in the ``ubuntu/xenial`` branch.  Patches here should be in [dep-8](http://dep.debian.net/deps/dep8/) format.
 
-### Process ####
+### Upstream Snapshot Process
 The tool used to do this is ``qa-scripts/scripts/new-upstream-snapshot``.
 It does almost everything needed with a few issues listed below.
 
@@ -72,7 +72,7 @@ The process goes like this:
     1 file changed, 26 insertions(+)
     wrote new-upstream-changes.txt for curtin version 18.1-1-g45564eef-0ubuntu1~16.04.1.
     release with:
-    dch --release --distribution=xenial
+    dch --release --distribution=xenial-proposed
     git commit -m "releasing curtin version 18.1-1-g45564eef-0ubuntu1~16.04.1" debian/changelog
     git tag ubuntu/18.1-1-g45564eef-0ubuntu1_16.04.1
 
@@ -113,13 +113,13 @@ This is generally not the mechanism that is preferred for any release supported 
 
 **Note**: Doing this will break the daily packaging recipes until the cherry-picks are reverted from the packaging branch.  This is because the recipe will try to build from trunk, and will fail to apply your cherry-picked patch.  This makes sense... it will grab trunk and then try to apply patches, but the cherry-picked patch will already exist.
 
-#### Process ####
-The tool for doing this is in ``debian/cherry-pick``.  It takes as import a commit-ish that it will create a cherry-pick from.
+#### Cherry-pick Process
+The tool for doing this is in ``qa-scripts/scripts/cherry-pick``.  It takes as import a commit-ish that it will create a cherry-pick from.
 
     ## just tag current so you have a revert point.
     $ git tag --delete xx-current >/dev/null 2>&1; git tag xx-current
     $ git checkout ubuntu/xenial
-    $ ./debian/cherry-pick dc2bd79949
+    $ cherry-pick dc2bd79949
 
 The tool will:
 
@@ -130,7 +130,7 @@ The tool will:
   * prompt you to commit the change.
 
 From here you follow along with the snapshot upload process from
-`dch --release` and beyond.
+[`dch --release` and beyond](#upstream-snapshot-process).
 
 **Note**: After doing uploading, in order to keep the daily builds working, we will then have to revert change.  See an example in [commit 9f159f3a5](https://git.launchpad.net/cloud-init/commit/?h=ubuntu/xenial&id=9f159f3a5)
 
