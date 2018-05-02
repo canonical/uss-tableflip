@@ -585,10 +585,6 @@ def create_instance(client, image, keyname, flavor=None,
     printed_addr = False
     last_status = None
     while True:
-        ready = vsmgr.wait_for_ready(instance['id'], limit=5)
-        if ready:
-            finish = time.time()
-            break
         data = vsmgr.get_instance(instance['id'])
         if not printed_addr and data.get('primaryIpAddress'):
             if last_status:
@@ -608,6 +604,12 @@ def create_instance(client, image, keyname, flavor=None,
                 "[%3ds] %s" % (int(time.time() - start), str(status)))
         sys.stdout.flush()
         last_status = status
+
+        if status == "SERVICE_SETUP":
+            sys.stderr.write("\n")
+            finish = time.time()
+            break
+        time.sleep(5)
 
         # print(json.dumps(data, indent=1) + "\n")
 
