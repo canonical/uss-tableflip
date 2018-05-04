@@ -369,6 +369,8 @@ def get_ubuntu_image_id(client, series_name, flavor):
 
     Options can be seen in 'slcli image list'.
     """
+    if series_name.startswith("template:"):
+        series_name = series_name.partition(":")[2]
     # flavor is assumed to end with 'X<disk_size>'
     size = int(flavor.rpartition('X')[2])
     arch = "64"
@@ -389,12 +391,11 @@ def get_ubuntu_image_id(client, series_name, flavor):
 
 def get_os_name(name):
     # translate 'os:xenial' to 'UBUNTU_16_64', os:OTHER to OTHER
-    if not name.startswith("os:"):
-        raise ValueError("Input did not start with os:")
+    if name.startswith("os:"):
+        name = name.partition(":")[2]
     s2v = {'precise': 'UBUNTU_12_64', 'trusty': 'UBUNTU_14_64',
-           'xenial': 'UBUNTU_16_64'}
-    short = name[3:]
-    return s2v.get(short, short)
+           'xenial': 'UBUNTU_16_64', 'bionic': 'UBUNTU_18_64'}
+    return s2v.get(name, name)
 
 
 def get_parser():
@@ -402,8 +403,9 @@ def get_parser():
     parser = ArgumentParser(description=__doc__)
     parser.add_argument(
         '-i', '--image-id', type=str,
-        help='Specify the image id to deploy. Use "os:xenial" to launch by '
-             'os_code. Or use ubuntu release name (%s), image id (integer), '
+        help='Specify the image id to deploy. Use "template:<release>" to '
+             'launch by well known template.  Or use ubuntu release name '
+             '(%s), image id (integer), '
              'guid (uuid), or name' % list(UBUNTU_VERSIONS.keys()))
     parser.add_argument(
         '--deb-file', type=str, required=False, dest='deb_file',
@@ -446,6 +448,7 @@ def get_parser():
         help='Optional user-data file to run during instance initialization')
     parser.add_argument(
         '-s', '--series', type=str, default=DEFAULT_SERIES,
+        choices=list(UBUNTU_VERSIONS.keys()),
         help='The default ubuntu series name to launch. [default={}]'.format(
                  DEFAULT_SERIES))
     parser.add_argument(
@@ -556,16 +559,18 @@ def create_instance(client, image, keyname, flavor=None,
         'userdata': userdata,
         }
     )
-    if image in UBUNTU_VERSIONS:
-        # 'xenial' gets converted to well known public template name.
-        opts['image_id'] = get_ubuntu_image_id(client, image, flavor)
-    elif image.startswith("os:"):
-        # image is 'os:' meaning launch by 'os' (os:UBUNTU_16_64)
+    if image in UBUNTU_VERSIONS or image.startswith("os:"):
+        # if image is simply 'xenial' or 'bionic', then launch by os_code.
+        # that is the newer config-2 style launch.
         # Get a list with:
         # opts = vsmgr.get_create_options()
         # [k['template']['operatingSystemReferenceCode']
         #    for k in opts['operatingSystems']]
         opts['os_code'] = get_os_name(image)
+    elif image.startswith("template:"):
+        # 'template:xenial' gets converted to well known public template name.
+        # image is 'os:' meaning launch by 'os' (os:UBUNTU_16_64)
+        opts['image_id'] = get_ubuntu_image_id(client, image, flavor)
     else:
         try:
             # this handles int or actual guid.
@@ -631,10 +636,10 @@ def main():
     if not os.path.isfile(args.pubkey_file):
         error("--pubkey-file=%s: not a file\n" % args.pubkey_file)
     image_id = args.image_id
+    if not image_id:
+        image_id = args.series
     client = SoftLayer.Client()
     try:
-        if not image_id:
-            image_id = get_ubuntu_image_id(client, args.series, args.type)
         secgroup = create_secgroup(client)
     except SoftLayer.exceptions.SoftLayerAPIError as e:
         sys.argv = ["slcli", "config", "setup"]
