@@ -1,0 +1,346 @@
+#!/usr/bin/python3
+
+import argparse
+import copy
+import atexit
+import json
+import logging
+import os
+import shlex
+import subprocess
+import sys
+import yaml
+
+RC_ANY = "*"
+FMT_YAML = "yaml"
+
+LOG = logging.getLogger("pstart")
+
+PSUEDO_INIT_PATH = "/sbin/psuedo-init"
+CLEANUPS = {}
+
+SHELL_DUMP = False
+
+
+class SubpError(IOError):
+    def __init__(self, cmd=None, rc=None, stdout=None, stderr=None, desc=None,
+                 data=None):
+
+        if cmd is None:
+            cmd = ["NO_COMMAND"]
+        if desc is None:
+            desc = "Execution of command failed."
+        self.dsc = desc
+        self.cmd = cmd if cmd else ["NO_COMMAND"]
+        self.rc = rc
+        self.stderr = stderr
+        self.stdout = stdout
+
+        msg = (
+            desc + "\n" +
+            "  cmd: %s\n" % ' '.join([shlex.quote(f) for f in cmd]) +
+            "  rc: %s\n" % rc +
+            self._fmt("stdout", stdout) +
+            self._fmt("stderr", stderr) +
+            self._fmt("data", data))
+        IOError.__init__(self, msg)
+
+    def _fmt(self, name, data, pre=b'    '):
+        cr = b'\n'
+        if not data:
+            return name + ": None\n"
+        if data.endswith(cr):
+            data = data[:-1]
+        return (
+            name + ":\n" +
+            (pre + data.replace(cr, cr + pre) + cr).decode(errors='ignore'))
+
+
+def lxc(args, ofmt=None, rcs=None, fmsg=None, data=None):
+    try:
+        out, err, rc = subp(['lxc'] + args, rcs=rcs, data=data)
+    except SubpError as e:
+        if fmsg is None:
+            raise e
+        fail(str(e) + fmsg + "\n")
+
+    if ofmt == FMT_YAML:
+        out = yaml.safe_load(out.decode())
+    return out, err, rc
+
+
+def dump_data(data):
+    return json.dumps(data, indent=1, sort_keys=True,
+                      separators=(',', ': '))
+
+
+def add_cleanup(name, func, *args, **kwargs):
+    global CLEANUPS
+    CLEANUPS[name] = (func, args, kwargs)
+
+
+def rm_cleanup(name):
+    global CLEANUPS
+    del CLEANUPS[name]
+
+
+def cleanups():
+    global CLEANUPS
+    cleanups = CLEANUPS
+    for name, (func, args, kwargs) in cleanups.items():
+        LOG.debug("Calling cleanup %s" % name)
+        func(*args, **kwargs)
+
+
+def shell_quote(cmd):
+    if isinstance(cmd, (tuple, list)):
+        return ' '.join([shlex.quote(x) for x in cmd])
+    return shlex.quote(cmd)
+
+
+def print_cmd(cmd, data=None, fp=sys.stderr):
+    global SHELL_DUMP
+    if not SHELL_DUMP:
+        return
+    msg = 'pstart% ' + shell_quote(cmd)
+    if data:
+        msg += ' <<"PSTART_EOF"\n' + data.decode("utf-8") + "\nPSTART_EOF"
+    fp.write(msg + '\n')
+
+
+def print_cmd_output(out, err, fp=sys.stderr):
+    global SHELL_DUMP
+    if not SHELL_DUMP:
+        return
+
+    for ref, data in (("<stdout>", out), ("<stderr>", err)):
+        if not data:
+            continue
+        fp.write("%s\n%s\n" % (ref, data.decode("utf-8", errors="replace")))
+
+
+def subp(args, rcs=None, capture=True, data=None):
+    if rcs is None:
+        rcs = [0]
+    devnull_fp = None
+
+    try:
+        stdin = None
+        stdout = None
+        stderr = None
+        if capture:
+            stdout = subprocess.PIPE
+            stderr = subprocess.PIPE
+        if data is None:
+            # using devnull assures any reads get null, rather
+            # than possibly waiting on input.
+            devnull_fp = open(os.devnull)
+            stdin = devnull_fp
+        else:
+            stdin = subprocess.PIPE
+
+        print_cmd(args, data)
+        sp = subprocess.Popen(args, stdout=stdout,
+                              stderr=stderr, stdin=stdin)
+        (out, err) = sp.communicate(data)
+
+        if not out:
+            out = b''
+        if not err:
+            err = b''
+
+    finally:
+        if devnull_fp:
+            devnull_fp.close()
+
+    print_cmd_output(out, err)
+
+    rc = sp.returncode
+    if rcs != RC_ANY and rc not in rcs:
+        raise SubpError(cmd=args, rc=rc, stdout=out, stderr=err, data=data)
+    return (out, err, rc)
+
+
+def fail(msg):
+    LOG.error(msg)
+    sys.exit(1)
+
+
+def create_profile(remote, pname):
+    rname = ''.join((remote, pname))
+    gw_cidr = "10.3.23.1/24"
+
+    netcfg, err, rc = lxc(['network', 'show', rname],
+                          ofmt=FMT_YAML, rcs=RC_ANY)
+    if rc == 0:
+        LOG.info("re-using existing network %s", rname)
+        LOG.debug("%s had config: %s", rname, netcfg)
+        gw_cidr = netcfg['config'].get('ipv4.address')
+        if not gw_cidr:
+            fail("No 'ipv4.address' in network config %s" % rname)
+    else:
+        out, err, rc = lxc(
+            ['network', 'create', rname, "ipv4.address=%s" % gw_cidr,
+             "ipv4.nat=true"],
+            fmsg="Failed to create network '%s'" % rname)
+
+        netcfg, err, rc = lxc(
+            ['network', 'show', rname],
+            fmsg="Failed show network after create: %s" % rname)
+
+        LOG.info("Created network '%s' with addr '%s'", rname, gw_cidr)
+
+    profcfg, err, rc = lxc(['profile', 'show', rname],
+                           ofmt=FMT_YAML, rcs=RC_ANY)
+    if rc == 0:
+        LOG.info("re-using existing profile %s", rname)
+        LOG.debug("%s had config: %s", rname, profcfg)
+    else:
+        init_cmd = ' '.join([PSUEDO_INIT_PATH, "--network=%s" % gw_cidr])
+        profcfg = {
+            "config": {"raw.lxc": "lxc.init.cmd=%s" % init_cmd},
+            "description": "Profile for psuedo-start.",
+            "devices": {"eth0": {"nictype": "bridged", "parent": pname,
+                                 "type": "nic"}}}
+        lxc(['profile', 'create', rname],
+            fmsg="Failed to create profile %s" % rname)
+        lxc(['profile', 'edit', rname], data=yaml.dump(profcfg).encode(),
+            fmsg="Failed to set config for profile '%s'" % rname)
+        LOG.info("Created profile '%s'", rname)
+
+    return profcfg, netcfg
+
+
+def get_psuedo_init_blob():
+    fpath = os.path.join(
+        os.path.dirname(os.path.realpath(__file__)), 'psuedo-init')
+    if not os.path.isfile(fpath):
+        fail("Expected to find psuedo-init at %s but it does not exist" %
+             fpath)
+    with open(fpath, "rb") as fp:
+        return fp.read()
+
+
+def do_start(remote, name, prof_name, ctn_cfg, cmd=None):
+    init_blob = get_psuedo_init_blob()
+
+    rcontainer = remote + ":" + name if remote else name
+
+    prof_cfg, net_cfg = create_profile(remote, prof_name)
+
+    new_cfg = copy.deepcopy(ctn_cfg)
+    new_cfg['profiles'] = (
+        [p for p in new_cfg['profiles'] if p != prof_name] + [prof_name])
+
+    lxc(['config', 'edit', rcontainer], data=yaml.dump(new_cfg).encode())
+
+    lxc(['file', 'push', '--mode=0755', '-',
+         rcontainer + PSUEDO_INIT_PATH],
+        data=init_blob,
+        fmsg=("Failed to push psuedo-init to %s%s" %
+              (rcontainer, PSUEDO_INIT_PATH)))
+
+    lxc(['start', rcontainer],
+        fmsg="Failed to start container '%s'" % rcontainer)
+    LOG.debug("waiting for container via lxc exec %s -- %s wait",
+              rcontainer, PSUEDO_INIT_PATH)
+    lxc(['exec', rcontainer, '--', PSUEDO_INIT_PATH, 'wait'])
+
+    if not cmd:
+        return
+
+    lcmd = ['lxc', 'exec', rcontainer, '--'] + cmd
+    print_cmd(lcmd)
+    ret = subprocess.call(lcmd)
+    do_stop(remote, name, prof_name, new_cfg)
+    sys.exit(ret)
+
+
+def do_clean(remote, name, prof_name, ctn_cfg):
+    rcontainer = remote + ":" + name if remote else name
+    new_profiles = [p for p in ctn_cfg['profiles'] if p != prof_name]
+    if ctn_cfg['profiles'] == new_profiles:
+        LOG.debug("No change needed to %s (%s not in profiles)",
+                  rcontainer, prof_name)
+        return
+
+    ctn_cfg['profiles'] = new_profiles
+    LOG.debug("Removing '%s' from profiles for container '%s'",
+              prof_name, rcontainer)
+    lxc(['config', 'edit', rcontainer], data=yaml.dump(ctn_cfg).encode(),
+        fmsg="Failed to restore config on '%s'" % rcontainer)
+
+
+def do_stop(remote, name, prof_name, ctn_cfg):
+    rcontainer = remote + ":" + name if remote else name
+    LOG.debug("Stopping container %s.", rcontainer)
+    lxc(['stop', rcontainer],
+        fmsg="Failed to stop container %s" % rcontainer)
+    do_clean(remote, name, prof_name, ctn_cfg)
+
+
+def main():
+    parser = argparse.ArgumentParser(prog="lxc-pstart")
+
+    mgroup = parser.add_mutually_exclusive_group(required=False)
+    for m in ('stop', 'start', 'clean'):
+        mgroup.add_argument('--' + m, action='store_const', const=m,
+                            dest='mode')
+    parser.add_argument('-b', '--bname', action='store', default='pstart0',
+                        help='The name to use for items created.')
+
+    parser.add_argument('-D', '--dump-commands', action='store_true',
+                        default=False,
+                        help='Dump all lxc commands to stderr')
+    parser.add_argument('-v', '--verbose', action='count', default=0)
+    parser.add_argument('container', metavar='<remote>:container',
+                        action='store', default=None)
+    parser.add_argument('cmd', metavar='command', nargs='*')
+
+    cmdargs = parser.parse_args()
+    if cmdargs.mode is None:
+        cmdargs.mode = 'start'
+    if cmdargs.cmd and cmdargs.mode != 'start':
+        sys.stderr.write("command can only be given to 'start'\n")
+        sys.exit(1)
+
+    level = min(cmdargs.verbose, 2)
+    logging.basicConfig(
+        stream=sys.stderr,
+        level=(logging.ERROR, logging.INFO, logging.DEBUG)[level])
+
+    if cmdargs.dump_commands:
+        global SHELL_DUMP
+        SHELL_DUMP = True
+
+    atexit.register(cleanups)
+
+    prof_name = cmdargs.bname
+    if ':' in cmdargs.container:
+        remote, _, container = cmdargs.container.partition(":")
+    else:
+        remote = ""
+        container = cmdargs.container
+    rcontainer = remote + container
+
+    ctn_cfg, _, _ = lxc(
+        ['config', 'show', rcontainer], ofmt=FMT_YAML,
+        fmsg="Failed to get config for '%s'. Does it exist?" % rcontainer)
+
+    if cmdargs.mode == "start":
+        do_start(remote, container, prof_name, ctn_cfg, cmdargs.cmd)
+    elif cmdargs.mode == "clean":
+        do_clean(remote, container, prof_name, ctn_cfg)
+    elif cmdargs.mode == "stop":
+        do_stop(remote, container, prof_name, ctn_cfg)
+    else:
+        sys.stderr.write("Unknown mode: %s" % cmdargs.mode)
+        sys.exit(1)
+
+    sys.exit(0)
+
+
+if __name__ == '__main__':
+    main()
+
+# vi: ts=4 expandtab syntax=python
