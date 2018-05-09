@@ -106,7 +106,7 @@ def get_parser():
         help='The name of the local directory into which we clone.')
     parser.add_argument(
         '--git-user', required=True, dest='git_user',
-        help='The lp_user we use for cloning cloud-init upstream remote.')
+        help='The lp_user we use for cloning upstream remote.')
     parser.add_argument(
         '--upstream-branch', required=False, dest='upstream',
         default='origin/master',
@@ -180,7 +180,8 @@ def handle_commit_message_errors(source_mp, error_message, project_name):
     if DRYRUN:
         return
     source_mp.createComment(
-        subject='Cloud-init commit message lints on {0}'.format(source_path),
+        subject='{0} commit message lints on {1}'.format(project_name,
+                                                         source_path),
         content=content, vote='Needs Fixing')
     if source_mp.queue_status != 'Work in progress':
         source_mp.setStatus(status="Work in progress")
@@ -376,7 +377,7 @@ def main():
             if (source_mp.queue_status != 'Merged' and
                 not (DRYRUN or 'publish' in args.skip)):
                 source_mp.createComment(
-                    subject='Cloud-init upstream commit landed',
+                    subject='%s upstream commit landed' % args.project_name,
 		    content=bug_comment)
                 source_mp.setStatus(status='Merged', revid=commitish.strip())
                 source_mp.lp_save()
