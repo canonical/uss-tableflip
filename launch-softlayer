@@ -31,6 +31,7 @@ if _missing_deps:
     sys.exit(1)
 
 
+PUBLIC_IMAGE_ACCOUNT_ID = 208938
 DEFAULT_REGION = 'dal05'
 DEFAULT_FLAVOR = 'B1_1X4X100'
 DEFAULT_FLAVOR = 'C1_1X1X25'
@@ -374,7 +375,7 @@ def get_ubuntu_image_id(client, series_name, flavor):
     # flavor is assumed to end with 'X<disk_size>'
     size = int(flavor.rpartition('X')[2])
     arch = "64"
-    account = 208938
+    account = PUBLIC_IMAGE_ACCOUNT_ID
     version = UBUNTU_VERSIONS[series_name]
     # basically going to get the newest image that matches this template.
     # 25GB - Ubuntu / Ubuntu / 16.04-64 Minimal for VSI
@@ -451,6 +452,9 @@ def get_parser():
         choices=list(UBUNTU_VERSIONS.keys()),
         help='The default ubuntu series name to launch. [default={}]'.format(
                  DEFAULT_SERIES))
+    parser.add_argument(
+        '--list-ibm-images', action='store_true', default=False,
+        help='show most recent images published by ibm.')
     parser.add_argument(
         '-v', '--verbose', action='store_true', default=False,
         help='Print more information about the operations performed.')
@@ -630,6 +634,29 @@ def error(message):
     sys.exit(1)
 
 
+def list_images(client, account=PUBLIC_IMAGE_ACCOUNT_ID):
+    imgr = SoftLayer.ImageManager(client)
+    imgs = imgr.list_public_images()
+    imgs = [i for i in imgs if i['accountId'] == account]
+
+    images = {}
+    for i in imgs:
+        name = i['name']
+        if name in images:
+            if datetime_for_image(i) < datetime_for_image(images[name]):
+                continue
+        images[name] = i
+
+    fmt = "%7s  %-36s  %10s  %s"
+    print(fmt % ("id", "guid", "create", "name"))
+    for i in sorted(images.values(), key=lambda i: i['name']):
+        print(fmt % (
+            i['id'], i['globalIdentifier'],
+            datetime.datetime.strftime(datetime_for_image(i), "%Y-%m-%d"),
+            i['name'],
+            ))
+
+
 def main():
     parser = get_parser()
     args = parser.parse_args()
@@ -656,6 +683,9 @@ def main():
         main()
         sys.exit(1)  # just because we did not launch an instance.
 
+    if args.list_ibm_images:
+        list_images(client)
+        sys.exit(0)
     keypair = import_keypair(client, args.pubkey_file)
     inst = create_instance(
         client, image_id, keyname=keypair['id'], hostname=args.hostname,
