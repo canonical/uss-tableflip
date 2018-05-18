@@ -113,6 +113,42 @@ This is generally not the mechanism that is preferred for any release supported 
 
 **Note**: Doing this will break the daily packaging recipes until the cherry-picks are reverted from the packaging branch.  This is because the recipe will try to build from trunk, and will fail to apply your cherry-picked patch.  This makes sense... it will grab trunk and then try to apply patches, but the cherry-picked patch will already exist.
 
+After the SRU is accepted into -proposed we can drop the cherry-picks on the ubuntu/release branch.  There isn't currently a full tool for this.  The easiest way to do this is:
+
+    $ git checkout ubuntu/xenial  # or whatever release.
+    $ new-upstream-snapshot
+    ## just go through the process here.
+
+    $ git log
+    # one of the commits will say something like:
+    #   drop cherry picks before merge from master at X.Y.Z
+    # get that commit hash
+
+    $ commit=XXXXXXXXXXXX
+    $ git reset --hard $commit
+    $ git commit --ammend
+
+    # update the commit message.  The one I just used was b7cca5fae8.
+    # keep the 'drop the following' in place and just add the 'Next upload'
+    # text.
+
+    # Example:
+    #  drop cherry picks.ubuntu/xenial
+    #
+    #  Next upload will be from a snapshot of trunk which will have the
+    #  cherry-picks listed here.  In order to make daily build recipes build
+    #  correctly we drop the cherry-picks from the packaging branch now.
+    #
+    #  drop the following cherry picks:
+    #    cpick-6ef92c98-IBMCloud-recognize-provisioning-environment-during
+    #    cpick-11172924-IBMCloud-Disable-config-drive-and-nocloud-only-if
+
+    $ git push upstream HEAD
+
+After doing that you can go to the recipe pages (see below) and click
+build-now.
+
+
 #### Cherry-pick Process
 The tool for doing this is in ``qa-scripts/scripts/cherry-pick``.  It takes as import a commit-ish that it will create a cherry-pick from.
 
@@ -165,6 +201,7 @@ We have daily packaging recipes that upload to the [daily ppa](https://code.laun
 
   * [xenial](https://code.launchpad.net/~cloud-init-dev/+recipe/cloud-init-daily-xenial)
   * [artful](https://code.launchpad.net/~cloud-init-dev/+recipe/cloud-init-daily-artful)
+  * [bionic](https://code.launchpad.net/~cloud-init-dev/+recipe/cloud-init-daily-bionic)
   * [devel](https://code.launchpad.net/~cloud-init-dev/+recipe/cloud-init-daily-devel)
 
 ## Links ##
