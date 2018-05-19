@@ -1,0 +1,348 @@
+#!/bin/sh
+
+ORIG_TIP=""
+TEMP_D=""
+CR='
+'
+error() { echo "$@" 1>&2; }
+fail() {
+    [ $# -eq 0 ] || error "$@";
+    if [ -n "$ORIG_TIP" ]; then
+        error "reset to previous tip with: git reset --hard $ORIG_TIP"
+    fi
+    exit 1;
+}
+
+Usage() {
+cat <<EOF
+${0##*/} [branch]
+    update current branch with trunk branch.
+    branch defaults to 'master'
+EOF
+}
+
+print_commit() {
+    local subject="$1" author="$2" bugs="$3" aname="" buf="" abugs=""
+    local indent="    - " indent2="      " ll=79
+    aname=${author% <*}
+    case "$aname" in
+        # core team members do not need credit in changelog.
+        Scott\ Moser|Chad\ Smith|Ryan\ Harper) aname="";;
+    esac
+    abugs="${aname:+ [${aname}]}${bugs:+ (LP: ${bugs})}"
+    if [ $((${#subject}+${#abugs})) -le $(($ll-${#indent})) ]; then
+        echo "${indent}${subject}${abugs}"
+    elif [ ${#subject} -ge $(($ll-${#indent})) ]; then
+        echo "${subject}${abugs}" |
+            fmt --width=$(($ll-${#indent})) |
+            sed -e "1s/^/${indent}/; 1n;" \
+                -e 's/^[ ]*//' \
+                -e '/^[ ]*$/d' -e "s/^/$indent2/" -e 's/[ ]\+$//'
+
+    else
+        ( echo "${subject}"; echo "${abugs}" ) |
+            fmt --width=$(($ll-${#indent})) |
+            sed -e "1s/^/${indent}/; 1n;" \
+                -e 's/^[ ]*//' \
+                -e '/^[ ]*$/d' -e "s/^/$indent2/" -e 's/[ ]\+$//'
+    fi
+}
+
+git_log_to_dch() {
+    local line="" commit="" lcommit="" bugs=""
+    local skip_bugs=false
+    [ "$1" = "--skip-bugs" ] && skip_bugs=true && shift
+    while :; do
+        read line || break
+        case "$line" in
+            commit\ *)
+                $skip_bugs && bugs=""
+                if [ -n "$commit" ]; then
+                    print_commit "$subject" "$author" "$bugs"
+                fi
+                commit=${line#*: }
+                bugs=""
+                author=""
+                subject=""
+                ;;
+            Author:*) author="${line#Author: }";;
+            LP:*) bugs="${bugs:+${bugs}, }${line#*: }";;
+            "") [ -z "$subject" ] && read subject;;
+        esac
+    done
+    $skip_bugs && bugs=""
+    if [ -n "$commit" ]; then
+        print_commit "$subject" "$author" "$bugs"
+    fi
+}
+
+run_quilt() {
+    local diffargs="-p ab --no-timestamps --no-index"
+    QUILT_PATCHES="debian/patches" \
+        QUILT_DIFF_OPTS="-p" \
+        QUILT_PATCH_OPTS="--reject-format=unified" \
+        QUILT_DIFF_ARGS="$diffargs --color=auto" \
+        QUILT_REFRESH_ARGS="$diffargs" \
+        LANG=C \
+        quilt --quiltrc - "$@"
+}
+
+cleanup() {
+    [ ! -d "${TEMP_D}" ] || rm -Rf "${TEMP_D}"
+}
+
+
+main() {
+    local short_opts="h:v"
+    local long_opts="help,bugs,no-bugs,no-prompt,skip-branch-name-check,verbose"
+    local getopt_out=""
+    getopt_out=$(getopt --name "${0##*/}" \
+        --options "${short_opts}" --long "${long_opts}" -- "$@") &&
+        eval set -- "${getopt_out}" ||
+        { bad_Usage; return; }
+    local skip_branch_name_check="${SKIP_BRANCH_NAME_CHECK:-0}"
+
+    local cur="" next=""
+    while [ $# -ne 0 ]; do
+        cur="$1"; next="$2";
+        case "$cur" in
+            -h|--help) Usage ; exit 0;;
+               --skip-branch-name-check) skip_branch_name_check=1;;
+               --no-bugs) skip_branch_name_check=1;;
+               --skip-branch-name-check) skip_branch_name_check=1;;
+            -v|--verbose) VERBOSITY=$((${VERBOSITY}+1));;
+            --) shift; break;;
+        esac
+        shift;
+    done
+
+    [ $# -eq 0 -o $# -eq 1 ] || {
+        bad_Usage "Got $# arguments. expected 0 or 1.";
+        return;
+    }
+
+    local cur_branch="" prev_pkg_ver pkg_name dist prev_dist t=""
+    local prev_pkg_hash="" new_pkg_debian="" new_upstream_ver="" new_pkg_ver=""
+    local sru_ver_suff=""
+    local from_ref="${1:-master}"
+    cur_branch=$(git rev-parse --abbrev-ref HEAD) ||
+        fail "failed to get current branch"
+
+    ORIG_TIP=$(git rev-parse HEAD) ||
+        fail "failed to get current tip"
+
+    if [ "${skip_branch_name_check}" = "0" ]; then
+        case "$cur_branch" in
+            ubuntu/*) :;;
+            *)
+                error "On branch '$cur_branch', expect to be on ubuntu/*"
+                error "Skip check with --skip-branch-name-check or"
+                error "  SKIP_BRANCH_NAME_CHECK=1"
+                fail;;
+        esac
+    fi
+
+	TEMP_D=$(mktemp -d "${TMPDIR:-/tmp}/${0##*/}.XXXXXX") ||
+		fail "failed to make tempdir"
+	trap cleanup EXIT
+
+    prev_pkg_ver=$(dpkg-parsechangelog --show-field Version) ||
+        fail "failed reading package version"
+    pkg_name=$(dpkg-parsechangelog --show-field Source) ||
+        fail "failed to read Source from changelog"
+    dist=$(dpkg-parsechangelog --show-field Distribution)
+
+    # if present, pull the '~16.04.x' off of the previous entry.
+    sru_ver_suff=$(echo "$prev_pkg_ver" |
+        sed 's,.*~\([0-9.]*\)[.][0-9]$,~\1.1,')
+    [ "${sru_ver_suff}" = "${prev_pkg_ver}" ] && sru_ver_suff=""
+
+    local sru_bug_fillstr="SRU_BUG_NUMBER_HERE" sru_bug_string="" skip_bugs=""
+    if [ -n "$sru_ver_suff" ]; then
+        sru_bug_string="(LP: #$sru_bug_fillstr)"
+        skip_bugs="--skip-bugs"
+    fi
+
+    # turn 0.7.7-10-gbc2c326-0ubuntu1 into 'bc2c326'
+    t=${prev_pkg_ver%-*}
+    prev_pkg_hash=${t##*-g}
+
+    new_pkg_debian="0ubuntu1"
+    new_upstream_ver=$(git describe --abbrev=8 "${from_ref}")
+    new_pkg_ver="${new_upstream_ver}-${new_pkg_debian}${sru_ver_suff}"
+
+    case "$new_upstream_ver" in
+        *-[0-9]*-g[a-f0-9]*) new_msg="New upstream snapshot.";;
+        [0-9][0-9].[0-9]) new_msg="New upstream release.";;
+        *) fail "unrecognized upstream version '$new_upstream_ver'";;
+    esac
+
+    local prev_upstream_ver=${prev_pkg_ver%-*}
+    if [ "${prev_upstream_ver}" = "${new_upstream_ver}" ]; then
+        echo "nothing to commit.  '$from_ref' is at ${new_upstream_ver}."
+        exit 0
+    fi
+
+    local prev_released_pkg_ver="" unreleased_changes="" prev_dist=""
+    if [ "$dist" = "UNRELEASED" ]; then
+        prev_released_pkg_ver=$(
+            dpkg-parsechangelog --offset 1 --count=1 --show-field Version)
+        unreleased_changes=$(
+            dpkg-parsechangelog --count=1 --show-field Changes | tail -n +4)
+        prev_dist=$(
+            dpkg-parsechangelog --offset 1 --count=1 --show-field Distribution)
+    else
+        prev_released_pkg_ver="${prev_pkg_ver}"
+        prev_dist="$dist"
+    fi
+
+    debug 1 "prev_released_pkg_ver=$prev_released_pkg_ver"
+    debug 1 "unreleased=${unreleased_changes}"
+
+    local dpseries="debian/patches/series" drops=""
+    local msg="" extra="" bname=""
+    if [ -e "$dpseries" ]; then
+        drops=""
+        while read bname extra; do
+            case "$bname" in
+                cpick-*)
+                    commit=${bname#cpick-}
+                    commit=${commit%%-*}
+                    echo "bname=$bname commit=${commit}" 1>&2
+                    if git merge-base --is-ancestor "$commit" "$from_ref"; then
+                        drops="${drops} debian/patches/$bname"
+                    fi
+                    ;;
+                *) echo "$bname${extra:+ ${extra}}";;
+            esac
+        done < $dpseries > "${TEMP_D}/series"
+        drops=${drops# }
+
+        if [ -n "$drops" ]; then
+            cp "${TEMP_D}/series" "$dpseries" ||
+                fail "failed copying to $dpseries"
+            if [ ! -s $dpseries ]; then
+                git rm --force "$dpseries" ||
+                    fail "failed removing empty $dpseries: git rm $dpseries"
+            fi
+            msg="drop cherry picks before merge from ${from_ref}"
+            msg="${msg} at $new_upstream_ver"
+            msg="$msg${CR}${CR}drop the following cherry picks:"
+            for file in $drops; do
+                git rm "$file" || fail "failed to git rm $file"
+                msg="${msg}$CR  ${file##*/}"
+            done
+            git commit -m "$msg" "$dpseries" $drops
+        fi
+    fi
+
+    local clog="${TEMP_D}/changelog" gitlog="${TEMP_D}/gitlog"
+    git merge "${from_ref}" -m "merge from $from_ref at $new_upstream_ver" ||
+        fail "failed: git merge ${from_ref} -m 'merge from $from_ref ..'"
+
+    local refreshed="" out="" npatch="" ret=""
+    rm -Rf .pc
+    refreshed=""
+    if [ -f "$dpseries" ]; then
+        # refresh any patches.
+        while :; do
+            npatch=$(run_quilt next 2>&1)
+            ret=$?
+            [ $ret -eq 2 ] && break
+            [ $ret -ne 0 ] && fail "quilt next returned $ret: $npatch"
+            out=$(run_quilt push 2>&1) ||
+                fail "patch $npatch does not apply: $out"
+            out=$(run_quilt refresh -p ab) ||
+            fail "patch $npatch failed refresh: $out"
+        done
+        refreshed=$(git diff --name-only debian/patches/)
+        quilt pop -a || fail "failed quilt pop -a"
+        rm -Rf .pc
+        if [ -n "$refreshed" ]; then
+            msg=$(
+                echo "refresh patches"
+                echo
+                echo "refresh patches against upstream ${new_upstream_ver}:"
+                for i in ${refreshed}; do echo "  $i"; done)
+            git commit -m "$msg" $refreshed ||
+                fail "failed to commit refreshed patches: $refreshed"
+        fi
+    fi
+
+    git log --first-parent --no-decorate --format=full \
+        "${prev_pkg_hash}..${from_ref}" >  "$gitlog" ||
+        fail "failed git log ${prev_pkg_hash}..${from_ref}"
+
+    {
+    echo "$pkg_name ($new_pkg_ver) UNRELEASED; urgency=medium"
+    echo
+    if [ -n "${unreleased_changes}" ]; then
+        echo "${unreleased_changes}"
+    fi
+    if [ -n "$drops" ]; then
+        echo "  * Drop the following cherry picks in debian/patches."
+        echo "    They are now incorporated in the upstream source:"
+        for i in ${drops}; do echo "    + ${i##*/}"; done
+    fi
+    if [ -n "${refreshed}" ]; then
+        echo "  * Refresh patches against upstream:"
+        for i in ${refreshed}; do echo "    + ${i##*/}"; done
+    fi
+
+    echo "  * $new_msg${sru_bug_string:+ ${sru_bug_string}}"
+    git_log_to_dch $skip_bugs < "$gitlog" ||
+        fail "failed git_log_to_dch"
+    printf "\n\n -- %s <%s>  %s\n" "$DEBFULLNAME" "$DEBEMAIL" "$(date -R)"
+    } > "$clog"
+
+    git_log_to_dch < "$gitlog" > "new-upstream-changes.txt" ||
+        fail "failed git_log_to_dch"
+
+    {
+        cat "$clog" &&
+            sed -n "/${prev_released_pkg_ver}/,\$p" "debian/changelog"
+    } > "${TEMP_D}/newlog" ||
+        fail "failed writing new changelog"
+
+    cp "$TEMP_D/newlog" "debian/changelog" ||
+        fail "failed replacing debian/changelog"
+
+    dch -e || fail "dch -e exited $?"
+
+    if grep -q "$sru_bug_fillstr" debian/changelog; then
+        echo "You did not fill in an SRU bug string.  Add one now."
+        read answer
+        dch -e
+        grep -q "$sru_bug_fillstr" debian/changelog &&
+            fail "You didn't fix it (debian/changelog has $sru_bug_string)"
+    fi
+
+    git diff
+
+    echo -n "Commit this change? (Y/n): "
+    read answer || fail "failed to read answer"
+    case "$answer" in
+        n|[Nn][oO]) fail;;
+    esac
+
+    msg="update changelog (${new_msg%.} $new_upstream_ver)."
+        git commit -m "$msg" debian/changelog ||
+        fail "failed to commit '$msg'"
+
+    local tag=""
+    tag=$(echo "ubuntu/$new_pkg_ver" | tr '~' '_')
+    cat <<EOF
+wrote new-upstream-changes.txt for $pkg_name version ${new_pkg_ver}.
+release with:
+sed -i -e "1s/UNRELEASED/${prev_dist}/" debian/changelog
+git commit -m "releasing $pkg_name version $new_pkg_ver" debian/changelog
+git tag $tag
+EOF
+
+    return 0
+}
+
+
+main "$@"
+
+# vi: ts=4 expandtab

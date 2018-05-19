@@ -1,0 +1,251 @@
+#!/bin/bash
+
+VERBOSITY=0
+TEMP_D=""
+COMMIT_URL=${COMMIT_URL:-https://git.launchpad.net/cloud-init/commit/?id=}
+
+error() { echo "$@" 1>&2; }
+fail() { local r=$?;  [ $r -eq 0 ] && r=1; failrc "$r" "$@"; }
+failrc() { local r=$1; shift; [ $# -eq 0 ] || error "$@"; exit "$r"; }
+
+Usage() {
+	cat <<EOF
+Usage: ${0##*/} [ options ] [input-file]
+
+   Read input-file which is a git or bzr log and create a
+   debian/changelog formatted file from the result.
+
+   options:
+      --vcs VCS   which log format is this ('git', 'auto', 'bzr')
+                  default: auto
+
+
+   Assuming git style log commit messages, this reads the makes the
+   summary line into a debian/changelog style entry with author
+   in [] and mentions bugs fixed (bzr via '--fixes', git via LP: #
+   in commit messages.)
+
+   Examples:
+
+  * bzr based simplestreams (bzr branch lp:simplestreams)
+
+      $ bzr log -r-5.. | log2dch
+        - Keystone v3 Support (LP: #1686437)
+        - tools/ubuntu_versions.py: Exclude old versions by version not name
+        - fix flake8
+        - tests: change to having http server select its own port
+        - flake8: fix style errors reported by pycodestyle 2.1.0
+
+  * git based cloud-init (git clone http://git.launchpad.net/cloud-init)
+
+      $ git log HEAD~5.. | log2dch
+        - tests: execute: support command as string [Joshua Powers]
+        - schema and docs: Add jsonschema to resizefs and bootcmd modules
+          [Chad Smith]
+        - tools: Add xkvm script, wrapper around qemu-system [Joshua Powers]
+        - vmware customization: return network config format
+          [Sankar Tanguturi] (LP: #1675063)
+        - Ec2: only attempt to operate at local mode on known platforms.
+          (LP: #1715128)
+EOF
+}
+
+bad_Usage() { Usage 1>&2; [ $# -eq 0 ] || error "$@"; return 1; }
+cleanup() {
+	[ -z "${TEMP_D}" -o ! -d "${TEMP_D}" ] || rm -Rf "${TEMP_D}"
+}
+
+debug() {
+	local level=${1}; shift;
+	[ "${level}" -gt "${VERBOSITY}" ] && return
+	error "${@}"
+}
+
+bzr_log_to_dch() {
+    local line="" commit="" bugs="" bug=""
+    local func="${1:-print_dch}"
+    while :; do
+        read line || break
+        case "$line" in
+            revno:\ *)
+                if [ -n "$commit" ]; then
+                    $func "$commit" "$subject" "$author" "$bugs"
+                fi
+                commit=${line#*: }
+                bugs=""
+                author=""
+                subject=""
+                ;;
+            author:*) author="${line#author: }";;
+            fixes\ bug:*)
+                # fixes bug: https://launchpad.net/bugs/1618429
+                bug="#${line##*/}"
+                bugs="${bugs:+${bugs}, }${bug}";;
+            message:)
+                read subject;;
+        esac
+    done
+    if [ -n "$commit" ]; then
+        $func "$commit" "$subject" "$author" "$bugs"
+    fi
+}
+
+
+print_hackio() {
+    local commit="$1" subject="$2" author="$3" bugs="$4" aname="" abugs=""
+    local buf="" bug="" t=""
+    local url="${COMMIT_URL}"
+    t=${commit#????????}
+    local bugmd="" pre=""
+    for bug in ${bugs}; do
+        bug=${bug%,}
+        [ -z "$bugmd" ] && pre="LP: "
+        bugmd="${bugmd}[$pre${bug}](https://pad.lv/$bug),"
+    done
+	bugmd=${bugmd%,}
+    t=${commit#????????}
+    buf="- ${bugmd:+${bugmd} }${subject}"
+    buf="${buf} \[[${commit%$t}]($url${commit%$t})\]"
+    echo "$buf"
+}
+
+print_trello() {
+    local commit="$1" subject="$2" author="$3" bugs="$4" aname="" abugs=""
+    local buf="" bug="" t=""
+    local url="${COMMIT_URL}"
+    t=${commit#????????}
+    buf="[${commit%$t}](${url}${commit%$t})"
+    for bug in ${bugs}; do
+        bug=${bug%,}
+        buf="${buf:+${buf} }[${bug}](http://pad.lv/$bug)"
+    done
+    buf="${buf:+${buf} }$subject"
+    echo "$buf"
+}
+
+print_dch() {
+    local commit="$1" subject="$2" author="$3" bugs="$4" aname="" abugs=""
+    local indent="    - " indent2="      " ll=79
+    local i=""
+    #( for i in ${bugs}; do echo ${i%,}; done); return
+    aname=${author% <*}
+    [ "${aname}" = "Scott Moser" ] && aname=""
+    abugs="${aname:+ [${aname}]}${bugs:+ (LP: ${bugs})}"
+    if [ $((${#subject}+${#abugs})) -le $((ll-${#indent})) ]; then
+        echo "${indent}${subject}${abugs}"
+    elif [ ${#subject} -ge $((ll-${#indent})) ]; then
+        echo "${subject}${abugs}" |
+            fmt --width=$((ll-${#indent})) |
+            sed -e "1s/^/${indent}/; 1n;" \
+                -e 's/^[ ]*//' \
+                -e '/^[ ]*$/d' -e "s/^/$indent2/" -e 's/[ ]\+$//'
+
+    else
+        ( echo "${subject}"; echo "${abugs}" ) |
+            fmt --width=$((ll-${#indent})) |
+            sed -e "1s/^/${indent}/; 1n;" \
+                -e 's/^[ ]*//' \
+                -e '/^[ ]*$/d' -e "s/^/$indent2/" -e 's/[ ]\+$//'
+    fi
+}
+
+git_log_to_dch() {
+    local line="" commit="" bugs=""
+    local func=${1:-print_dch}
+    while :; do
+        read line || break
+        case "$line" in
+            commit\ *)
+                if [ -n "$commit" ]; then
+                    "$func" "$commit" "$subject" "$author" "$bugs"
+                fi
+                commit=${line#commit }
+                bugs=""
+                author=""
+                subject=""
+                ;;
+            Author:*) author="${line#Author: }";;
+            LP:*) bugs="${bugs:+${bugs}, }${line#*: }";;
+            "") [ -z "$subject" ] && read subject;;
+        esac
+    done
+    if [ -n "$commit" ]; then
+        $func "$commit" "$subject" "$author" "$bugs"
+    fi
+}
+
+assert_temp_d() {
+	TEMP_D=$(mktemp -d "${TMPDIR:-/tmp}/${0##*/}.XXXXXX") ||
+		fail "failed creating temp directory";
+}
+
+main() {
+	local short_opts="ht:v"
+	local long_opts="commit-url:,hackio,help,trello,vcs:,verbose"
+	local getopt_out=""
+	getopt_out=$(getopt --name "${0##*/}" \
+		--options "${short_opts}" --long "${long_opts}" -- "$@") &&
+		eval set -- "${getopt_out}" ||
+		{ bad_Usage; return; }
+
+	local cur="" next="" vcs="auto" input="-" omode="dch"
+
+	while [ $# -ne 0 ]; do
+		cur="$1"; next="$2";
+		case "$cur" in
+			-h|--help) Usage ; exit 0;;
+			   --trello) omode="trello";;
+			   --hackio) omode="hackio";;
+			   --commit-url) COMMIT_URL="$next";;
+			-t|--vcs) vcs="$next";
+				case "$vcs" in
+					auto|git|bzr)
+						bad_Usage "vcs must be one of auto, git, bzr.";
+						return;;
+				esac
+				;;
+			-v|--verbose) VERBOSITY=$((VERBOSITY+1));;
+			--) shift; break;;
+		esac
+		shift;
+	done
+
+	[ $# -le 1 ] || { bad_Usage "got $# arguments, expected 0 or 1"; return; }
+
+	[ $# -eq 1 ] && { input="$1"; shift; }
+	trap cleanup EXIT
+
+	local oinput="$input"
+	if [ "$vcs" = "auto" ]; then
+		if [ "$input" = "-" ]; then
+			assert_temp_d
+			input="${TEMP_D}/input"
+			cat > "$input"
+		fi
+		if grep -q '^revno:' "$input"; then
+			vcs="bzr"
+		elif grep -q '^commit ' "$input"; then
+			vcs="git"
+		else
+			error "failed to figure out vcs type in $oinput"
+			return
+		fi
+	fi
+
+	if [ "$input" != "-" ]; then
+		exec < "$input" ||
+			{ error "failed to open $input for reading"; return 1; }
+	fi
+
+    case "$omode" in
+        trello) printer="print_trello";;
+        hackio) printer="print_hackio";;
+        *) printer="print_dch";;
+    esac
+	local func="${vcs}_log_to_dch"
+	"$func" "$printer"
+	return
+}
+
+main "$@"
+# vi: ts=4 noexpandtab
