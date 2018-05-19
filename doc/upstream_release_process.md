@@ -63,7 +63,7 @@ Then upload that to launchpad.
     
 ## Close bugs (fun)
 Any bugs that were listed should be marked as 'fix-released' now.
-There is a tol in [qa-scripts](https://github.com/cloud-init/qa-scripts) called that makes this sane.
+There is a tool in [uss-tableflip](https://github.com/CanonicalLtd/uss-tableflip) called lp-bugs-released that makes this sane.
 
     # git log <last-release>..<this-release>
     $ git log 17.1..17.2 | grep "^[ ]*LP:" | sort -u

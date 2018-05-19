@@ -41,7 +41,7 @@ def main():
         sys.exit(1)
 
     lp = Launchpad.login_with(
-        "qa-scripts lp-bugs-released", 'production', version='devel')
+        "uss-tableflip lp-bugs-released", 'production', version='devel')
 
     project_name = args.project
     # lp_project = lp.projects(project_name)

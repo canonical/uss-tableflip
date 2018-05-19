@@ -27,7 +27,7 @@ Things that need to be considered:
  * **backwards incompatible changes.**  Any backwards incompatible changes in upstream must be reverted in a stable release.  Such changes are allowed in the Ubuntu development release, but cannot be SRU'd.  As an example of such a change see [debian/patches/azure-use-walinux-agent.patch](https://git.launchpad.net/cloud-init/tree/debian/patches/azure-use-walinux-agent.patch?h=ubuntu/xenial) in the ``ubuntu/xenial`` branch.  Patches here should be in [dep-8](http://dep.debian.net/deps/dep8/) format.
 
 ### Upstream Snapshot Process
-The tool used to do this is ``qa-scripts/scripts/new-upstream-snapshot``.
+The tool used to do this is ``uss-tableflip/scripts/new-upstream-snapshot``.
 It does almost everything needed with a few issues listed below.
 
 new-upstream-release does:
@@ -150,7 +150,7 @@ build-now.
 
 
 #### Cherry-pick Process
-The tool for doing this is in ``qa-scripts/scripts/cherry-pick``.  It takes as import a commit-ish that it will create a cherry-pick from.
+The tool for doing this is in ``uss-tableflip/scripts/cherry-pick``.  It takes as import a commit-ish that it will create a cherry-pick from.
 
     ## just tag current so you have a revert point.
     $ git tag --delete xx-current >/dev/null 2>&1; git tag xx-current
