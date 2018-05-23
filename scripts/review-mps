@@ -74,7 +74,8 @@ Please fix the following issues:
 ------------------------------
 
 For more information, see commit message guidelines at
-https://cloudinit.readthedocs.io/en/latest/topics/hacking.html#do-these-things-for-each-feature-or-bug
+{commit_guidelines}
+https://{rtd_project_name}.readthedocs.io/en/latest/topics/hacking.html#do-these-things-for-each-feature-or-bug
 '''
 
 
@@ -102,8 +103,8 @@ def get_parser():
         help='The name of the lp git project to review. Default cloud-init.')
     parser.add_argument(
         '--local-repo-dir', required=False, dest='repo_dir',
-        default='ci-publishing',
-        help='The name of the local directory into which we clone.')
+        help=('The name of the local directory into which we clone.'
+              ' Default: publishing-<projectname>'))
     parser.add_argument(
         '--git-user', required=True, dest='git_user',
         help='The lp_user we use for cloning upstream remote.')
@@ -174,7 +175,8 @@ def handle_commit_message_errors(source_mp, error_message, project_name):
     source_path = source_mp.source_git_path.replace('refs/heads/', '')
     content = COMMIT_MESSAGE_LINTS_TMPL.format(
         project_name=project_name, errors=error_message,
-        max_line_length=GIT_MAX_WIDTH)
+        max_line_length=GIT_MAX_WIDTH,
+        rtd_project_name=project_name.replace('-',''))
     log('✗: marked "Work in progress": {0}\n{1}'.format(
             source_mp.web_link, error_message))
     if DRYRUN:
@@ -322,7 +324,7 @@ def main():
     DRYRUN = args.dryrun
     VERBOSITY = 1 if args.verbose else 0
     lp = Launchpad.login_with(
-        "cloud-init git-merge tool", 'production', version='devel')
+        "server-team review-mps tool", 'production', version='devel')
     lp_project = lp.projects(args.project_name)
     upstream_remote, upstream_branch = args.upstream.split('/', 1)
     source_mps = [
@@ -334,18 +336,21 @@ def main():
                 args.status, upstream_branch))
         return exit_code
 
-    if not os.path.exists(args.repo_dir):
+    repo_dir = args.repo_dir
+    if not repo_dir:
+        repo_dir = 'publishing-{project}'.format(project=args.project_name)
+    if not os.path.exists(repo_dir):
         subp(['git', 'clone',
               GIT_REMOTE_PATH_TMPL.format(
                   lp_user=args.git_user, project=args.project_name),
-              args.repo_dir])
-        os.chdir(args.repo_dir)
+              repo_dir])
+        os.chdir(repo_dir)
     else:
-        log('Re-using existing repo dir: {0}'.format(args.repo_dir))
-        os.chdir(args.repo_dir)
+        os.chdir(repo_dir)
         # Refresh local copy of upstream master
         subp(['git', 'checkout', upstream_branch])
         subp(['git', 'pull'])
+    log('Cloned publishing content into: {_dir}'.format(_dir=repo_dir))
     create_publish_branch(args.upstream, 'publish_target')
 
     if not args.all:
