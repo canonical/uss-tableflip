@@ -1,2 +1,2 @@
 # uss-tableflip
-general process scripts for ubuntu-server
+Public repository for general process scripts for ubuntu-server
