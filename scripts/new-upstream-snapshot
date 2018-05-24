@@ -292,7 +292,7 @@ main() {
     echo "  * $new_msg${sru_bug_string:+ ${sru_bug_string}}"
     git_log_to_dch $skip_bugs < "$gitlog" ||
         fail "failed git_log_to_dch"
-    printf "\n\n -- %s <%s>  %s\n" "$DEBFULLNAME" "$DEBEMAIL" "$(date -R)"
+    printf "\n -- %s <%s>  %s\n\n" "$DEBFULLNAME" "$DEBEMAIL" "$(date -R)"
     } > "$clog"
 
     git_log_to_dch < "$gitlog" > "new-upstream-changes.txt" ||
