@@ -30,8 +30,6 @@ def log(message, verbosity=0):
 def subp(cmd, skip=False):
    log('$ {command}'.format(command=' '.join(cmd)),
        verbosity=0 if (DRYRUN or skip) else 1)
-   if DRYRUN:
-       return
    if skip:
        return
    proc = Popen(cmd, stdout=PIPE, stderr=PIPE)
@@ -114,7 +112,8 @@ def get_parser():
         help=('The name of remote branch target into which we will merge.'
               ' Default: origin/master'))
     parser.add_argument(
-        '--skip', default=[],  choices=['bugs', 'publish', 'tests'], nargs='*',
+        '--skip', default=[],  choices=['bugs', 'publish', 'tests'],
+        action='append',
         help=('Skip certain types of operations.'))
     parser.add_argument(
         '-v', '--verbose', required=False, default=False, action='store_true',
@@ -161,7 +160,7 @@ def scrub_commit_msg(mp, source_path):
     return '\n'.join(commit_msg)
 
 
-def handle_commit_message_errors(source_mp, error_message, project_name):
+def handle_commit_message_errors(source_mp, error_message, project_name, skip):
     '''Report commit message lints or errors on a merge proposal.
 
     Add a comment with errors, vote 'Needs Fixing' and mark the branch as
@@ -179,7 +178,7 @@ def handle_commit_message_errors(source_mp, error_message, project_name):
         rtd_project_name=project_name.replace('-',''))
     log('✗: marked "Work in progress": {0}\n{1}'.format(
             source_mp.web_link, error_message))
-    if DRYRUN:
+    if skip:
         return
     source_mp.createComment(
         subject='{0} commit message lints on {1}'.format(project_name,
@@ -280,13 +279,14 @@ def merge_source_mp(lp, project, source_mp, source_path, commit_msg):
     subp(['git', 'merge', '{0}{1}'.format(source_remote, source_path),
           '--squash'])
 
-    with open(os.path.join(os.getcwd(), 'commit.msg'), 'wb') as stream:
+    commit_file = os.path.join(os.path.dirname(os.getcwd()), 'commit.msg')
+    with open(commit_file, 'wb') as stream:
         stream.write(commit_msg.encode('utf-8'))
     # Grab author string from most recent commit on the proposed branch
     author = subp(
         ['git', 'log', '-n', '1', 'publish_source{0}'.format(source_path),
          '--pretty="%an <%ae>'])
-    subp(['git', 'commit', '--all', '-F', 'commit.msg', '--author', author])
+    subp(['git', 'commit', '--all', '-F', commit_file, '--author', author])
 
 
 def set_bug_status(lp, project, commit_msg, bug_status, bug_comment, skip):
@@ -304,7 +304,7 @@ def set_bug_status(lp, project, commit_msg, bug_status, bug_comment, skip):
                 bug_status,
                 '\n'.join('http://pad.lv/{0}'.format(bug_id)
                           for bug_id in bug_ids)))
-    if DRYRUN or skip:
+    if skip:
         return
     for bug_id in bug_ids:
         bug = lp.bugs[int(bug_id)]
@@ -355,6 +355,10 @@ def main():
 
     if not args.all:
         source_mps = [prompt_source_mp(source_mps)]
+    # DRYRUN is an alias for no-remote operations on Launchpad.
+    skips = set(args.skip)
+    if DRYRUN:
+        skips.union(set(['publish', 'bugs']))  # User might add --skip tests
     for source_mp in source_mps:
         source_path = source_mp.source_git_path.replace('refs/heads', '')
         fetch_source_remote(
@@ -362,7 +366,8 @@ def main():
         try:
             commit_msg = scrub_commit_msg(source_mp, source_path)
         except ValueError as e:
-            handle_commit_message_errors(source_mp, str(e), args.project_name)
+            handle_commit_message_errors(
+                source_mp, str(e), args.project_name, skip='publish' in skips)
             exit_code = 1
             continue
         if args.merge:
@@ -373,25 +378,27 @@ def main():
                 tox_output = subp(['tox'])
                 # Print redacted tox summary
                 log('\n'.join(tox_output.splitlines()[-8:]))
-            commitish = subp(['git', 'log', '-n', '1', '--pretty=%H'])
-            bug_comment = BUG_MESSAGE_UPSTREAM_COMMIT_TMPL.format(
-                commitish=commitish.strip()[:8], project=args.project_name)
-            set_bug_status(
-                lp, args.project_name, commit_msg, 'Fix Committed',
-                bug_comment, 'bugs' in args.skip)
-            if (source_mp.queue_status != 'Merged' and
-                not (DRYRUN or 'publish' in args.skip)):
-                source_mp.createComment(
-                    subject='%s upstream commit landed' % args.project_name,
-		    content=bug_comment)
-                source_mp.setStatus(status='Merged', revid=commitish.strip())
-                source_mp.lp_save()
             if args.pushremote:  # Add remote push target
                 upstream_remote = args.pushremote
             push_cmd = [
                 'git', 'push', upstream_remote,
                 'publish_target:{0}'.format(upstream_branch)]
             subp(push_cmd, skip=bool('publish' in args.skip))
+            commitish = subp(['git', 'log', '-n', '1', '--pretty=%H'])
+            bug_comment = BUG_MESSAGE_UPSTREAM_COMMIT_TMPL.format(
+                commitish=commitish.strip()[:8], project=args.project_name)
+            skip_bug_ops = set(['bugs', 'publish'])
+            skip_bugs = bool(skip_bug_ops.intersection(args.skip))
+            set_bug_status(
+                lp, args.project_name, commit_msg, 'Fix Committed',
+                bug_comment, skip_bugs)
+            if (source_mp.queue_status != 'Merged' and
+                'publish' not in args.skip):
+                source_mp.createComment(
+                    subject='%s upstream commit landed' % args.project_name,
+		    content=bug_comment)
+                source_mp.setStatus(status='Merged', revid=commitish.strip())
+                source_mp.lp_save()
             log('✔: {merge_url}'.format(merge_url=source_mp.web_link))
     log('Merge reviews complete')
     return exit_code
