@@ -270,6 +270,22 @@ def fetch_source_remote(project, source_mp, source_path, upstream_branch_path):
     subp(['git', 'fetch', source_remote])
 
 
+def get_author(msg):
+    """grab Author: line from commit_msg if present.
+       return tuple of (author, updated_msg)."""
+    authpre = 'Author:'
+    author = None
+    for line in msg.splitlines():
+        if line.startswith(authpre):
+            author = line.partition(":")[2].strip()
+    if author:
+        msg = '\n'.join([l for l in msg.splitlines()
+                         if not l.startswith(authpre)]) + '\n'
+        msg.replace("\n\n\n\+", "\n\n")
+        msg = msg.strip() + "\n"
+    return author, msg
+
+
 def merge_source_mp(lp, project, source_mp, source_path, commit_msg):
     '''Merge source_mp into the current local branch.
 
@@ -282,10 +298,12 @@ def merge_source_mp(lp, project, source_mp, source_path, commit_msg):
     commit_file = os.path.join(os.path.dirname(os.getcwd()), 'commit.msg')
     with open(commit_file, 'wb') as stream:
         stream.write(commit_msg.encode('utf-8'))
-    # Grab author string from most recent commit on the proposed branch
-    author = subp(
-        ['git', 'log', '-n', '1', 'publish_source{0}'.format(source_path),
-         '--pretty="%an <%ae>'])
+    author, commit_msg = get_author(commit_msg)
+    if not author:
+        author = subp(
+            ['git', 'log', '-n', '1', 'publish_source{0}'.format(source_path),
+             '--pretty="%an <%ae>'])
+
     subp(['git', 'commit', '--all', '-F', commit_file, '--author', author])
 
 
