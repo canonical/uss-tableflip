@@ -46,19 +46,22 @@ This is mostly same as merging anything else and pushing, but make sure to push 
     
 ## Update Release info on Launchpad.
 Go to https://launchpad.net/cloud-init click the milestone that we're releasing.  That will take you to [lp/cloud-init/+milestone/<X.Y>](http://launchpad.net/cloud-init/+milestone/17.2) .  Hit 'Create release'.
-> [name=Chad Smith]Ryan and I don't have permissions for this on cloud-init. No 'Create release' option present
 
-> Model the Release notes after other releases such as [17.1](https://launchpad.net/cloud-init/+milestone/17.1/) or [17.2](
-https://launchpad.net/cloud-init/+milestone/17.2)
+ Model the Release notes after other releases such as [17.1](https://launchpad.net/cloud-init/+milestone/17.1/) or [17.2](https://launchpad.net/cloud-init/+milestone/17.2)
 
 ## Upload source tarball to Launchpad.
-> [name=Chad Smith] Missing the upload step
 Then upload that to launchpad.  
     
     $ ./tools/make-tarball 
     cloud-init-17.2.tar.gz
     
     $ gpg --sign --armor --detach-sig cloud-init-17.2.tar.gz
+
+
+Note, we can do this step including the 'Update Release info' step with with 'lp-project-upload' from 'lptools' package:
+
+
+    $ lp-project-upload cloud-init 17.2 cloud-init-17.2.tar.gz 17.3 changelog-file releasenotes-file
     
     
 ## Close bugs (fun)
