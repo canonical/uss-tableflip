@@ -296,14 +296,13 @@ def merge_source_mp(lp, project, source_mp, source_path, commit_msg):
           '--squash'])
 
     commit_file = os.path.join(os.path.dirname(os.getcwd()), 'commit.msg')
-    with open(commit_file, 'wb') as stream:
-        stream.write(commit_msg.encode('utf-8'))
     author, commit_msg = get_author(commit_msg)
     if not author:
         author = subp(
             ['git', 'log', '-n', '1', 'publish_source{0}'.format(source_path),
              '--pretty="%an <%ae>'])
-
+    with open(commit_file, 'wb') as stream:
+        stream.write(commit_msg.encode('utf-8'))
     subp(['git', 'commit', '--all', '-F', commit_file, '--author', author])
 
 
