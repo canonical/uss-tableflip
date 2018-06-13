@@ -391,7 +391,7 @@ def main():
         if args.merge:
             merge_source_mp(
                 lp, args.project_name, source_mp, source_path, commit_msg)
-            if 'tests' not in args.skip:
+            if 'tests' not in skips:
                 log('Running tox test prior to marking merged')
                 tox_output = subp(['tox'])
                 # Print redacted tox summary
@@ -401,17 +401,16 @@ def main():
             push_cmd = [
                 'git', 'push', upstream_remote,
                 'publish_target:{0}'.format(upstream_branch)]
-            subp(push_cmd, skip=bool('publish' in args.skip))
+            subp(push_cmd, skip=bool('publish' in skips))
             commitish = subp(['git', 'log', '-n', '1', '--pretty=%H'])
             bug_comment = BUG_MESSAGE_UPSTREAM_COMMIT_TMPL.format(
                 commitish=commitish.strip()[:8], project=args.project_name)
             skip_bug_ops = set(['bugs', 'publish'])
-            skip_bugs = bool(skip_bug_ops.intersection(args.skip))
+            skip_bugs = bool(skip_bug_ops.intersection(skips))
             set_bug_status(
                 lp, args.project_name, commit_msg, 'Fix Committed',
                 bug_comment, skip_bugs)
-            if (source_mp.queue_status != 'Merged' and
-                'publish' not in args.skip):
+            if (source_mp.queue_status != 'Merged' and 'publish' not in skips):
                 source_mp.createComment(
                     subject='%s upstream commit landed' % args.project_name,
 		    content=bug_comment)
