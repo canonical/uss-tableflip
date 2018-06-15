@@ -375,7 +375,8 @@ def main():
     # DRYRUN is an alias for no-remote operations on Launchpad.
     skips = set(args.skip)
     if DRYRUN:
-        skips.union(set(['publish', 'bugs']))  # User might add --skip tests
+        # User could have added --skip tests and we don't want to unset that
+        skips = skips.union(set(['publish', 'bugs']))
     for source_mp in source_mps:
         source_path = source_mp.source_git_path.replace('refs/heads', '')
         fetch_source_remote(
