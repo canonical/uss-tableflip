@@ -72,7 +72,6 @@ Please fix the following issues:
 ------------------------------
 
 For more information, see commit message guidelines at
-{commit_guidelines}
 https://{rtd_project_name}.readthedocs.io/en/latest/topics/hacking.html#do-these-things-for-each-feature-or-bug
 '''
 
