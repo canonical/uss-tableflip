@@ -25,7 +25,7 @@ from email.parser import Parser
 AUTOMATION_EMAILS = [
     'Ubuntu Developers <ubuntu-devel-discuss@lists.ubuntu.com>']
 
-def format_publishing_history(history):
+def format_publishing_history(history, style="prettytable"):
     """Print human-readable format of package upload history."""
 
     for creator, person_history in history.items():
@@ -44,7 +44,15 @@ def format_publishing_history(history):
                 publish_table.add_row(
                     [pkg_name, version, upload['Distribution'], upload['Date'],
                      creator, sponsor])
-        print(publish_table)
+        if style == 'markdown':
+            # Courtesy https://gist.github.com/dbzm/68256c86c60d70072576
+            publish_table.junction_char = '|'
+            lines = [
+                row[1:-1]
+                for row in publish_table.get_string().split('\n')[1:-1]]
+            print('\n'.join(lines))
+        else:
+            print(publish_table)
 
 
 
@@ -127,6 +135,9 @@ def main():
     parser.add_argument(
         '--emails', action='append', required=False, default=[],
         help='Find package changes related to specific email addresses.')
+    parser.add_argument(
+        '--format', type=str, required=False, choices=['markdown'],
+        help='Specify alternative formatting: markdown')
 
     args = parser.parse_args()
 
@@ -146,7 +157,7 @@ def main():
         with open(mbox_path) as stream:
             history = process_mbox_history(
                 stream, emails=args.emails, packages=args.packages)
-            format_publishing_history(history)
+            format_publishing_history(history, args.format)
 
 
 def process_mbox_history(stream, emails=None, packages=None):
