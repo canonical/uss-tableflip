@@ -49,6 +49,25 @@ Go to https://launchpad.net/cloud-init click the milestone that we're releasing.
 
  Model the Release notes after other releases such as [17.1](https://launchpad.net/cloud-init/+milestone/17.1/) or [17.2](https://launchpad.net/cloud-init/+milestone/17.2)
 
+To help get some of those bits of information, add '| wc -l' for just the numbers. not done here to have you sanity check output.
+
+  * just get log into a file
+
+        git log 18.2..HEAD > git-log
+
+  * contributors
+
+        grep Author git-log | sed 's,.*: ,,'  | sort -u
+
+  * top level domains
+
+        grep Author git-log | sed 's,.*: ,,'  | sort -u | sed 's,.*@,,' | sort -u
+
+  * bugs
+
+        grep '^[ ]*LP' git-log | sed -e 's,#,,g' -e 's,.*LP: ,,' -e 's/,[ ]*/\n/'
+
+
 ## Upload source tarball to Launchpad.
 Then upload that to launchpad.  
     
