@@ -331,12 +331,17 @@ main() {
 
     local tag=""
     tag=$(echo "ubuntu/$new_pkg_ver" | tr '~' '_')
+    release_suffix=""
+    if [ -z "$skip_bugs" ]; then
+        release_suffix="-proposed"
+    fi
     cat <<EOF
 wrote new-upstream-changes.txt for $pkg_name version ${new_pkg_ver}.
 release with:
-sed -i -e "1s/UNRELEASED/${prev_dist}/" debian/changelog
+sed -i -e "1s/UNRELEASED/${prev_dist}${release_suffix}/" debian/changelog
 git commit -m "releasing $pkg_name version $new_pkg_ver" debian/changelog
 git tag $tag
+# optionally push your tag: git push <remote> $tag
 EOF
 
     return 0
