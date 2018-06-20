@@ -15,7 +15,7 @@ def main():
 
     subject_tmpl = "Fixed in {project} version {version}."
     comment_tmpl = (
-        "This bug is believed to be fixed in {project} in version"
+        "This bug is believed to be fixed in {project} in version "
         "{version}. If this is still a problem for you, please make a "
         "comment and set the state back to New\n\nThank you.")
 
