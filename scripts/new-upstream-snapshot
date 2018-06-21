@@ -2,9 +2,15 @@
 
 ORIG_TIP=""
 TEMP_D=""
+VERBOSITY=0
 CR='
 '
 error() { echo "$@" 1>&2; }
+debug() {
+	local level=${1}; shift;
+	[ "${level}" -gt "${VERBOSITY}" ] && return
+	error "${@}"
+}
 fail() {
     [ $# -eq 0 ] || error "$@";
     if [ -n "$ORIG_TIP" ]; then
@@ -15,9 +21,18 @@ fail() {
 
 Usage() {
 cat <<EOF
-${0##*/} [branch]
-    update current branch with trunk branch.
-    branch defaults to 'master'
+${0##*/} [commitish]
+
+update current branch with commitish.
+commitish defaults to 'master'
+
+options:
+   -h|--help                      show this message.
+      --skip-branch-name-check    do not require this branch start with ubuntu/
+      --update-patches-only       stop after dropping cherry-picks and
+                                  refreshing patches in debian/patches/
+      --no-bugs)                  do not put bug refs (LP: #XXX) in changelog.
+   -v|--verbose)                  increase verbosity.
 EOF
 }
 
@@ -94,13 +109,14 @@ cleanup() {
 
 main() {
     local short_opts="h:v"
-    local long_opts="help,bugs,no-bugs,no-prompt,skip-branch-name-check,verbose"
+    local long_opts="help,bugs,update-patches-only,no-bugs,no-prompt,skip-branch-name-check,verbose"
     local getopt_out=""
     getopt_out=$(getopt --name "${0##*/}" \
         --options "${short_opts}" --long "${long_opts}" -- "$@") &&
         eval set -- "${getopt_out}" ||
         { bad_Usage; return; }
     local skip_branch_name_check="${SKIP_BRANCH_NAME_CHECK:-0}"
+    local update_patches_only=false bug_refs_in_clog=true
 
     local cur="" next=""
     while [ $# -ne 0 ]; do
@@ -108,8 +124,8 @@ main() {
         case "$cur" in
             -h|--help) Usage ; exit 0;;
                --skip-branch-name-check) skip_branch_name_check=1;;
-               --no-bugs) skip_branch_name_check=1;;
-               --skip-branch-name-check) skip_branch_name_check=1;;
+               --update-patches-only) update_patches_only=true;;
+               --no-bugs) bug_refs_in_clog=false;;
             -v|--verbose) VERBOSITY=$((${VERBOSITY}+1));;
             --) shift; break;;
         esac
@@ -123,7 +139,7 @@ main() {
 
     local cur_branch="" prev_pkg_ver pkg_name dist prev_dist t=""
     local prev_pkg_hash="" new_pkg_debian="" new_upstream_ver="" new_pkg_ver=""
-    local sru_ver_suff=""
+    local sru_ver_suff="" upstream_hash=""
     local from_ref="${1:-master}"
     cur_branch=$(git rev-parse --abbrev-ref HEAD) ||
         fail "failed to get current branch"
@@ -158,6 +174,7 @@ main() {
     [ "${sru_ver_suff}" = "${prev_pkg_ver}" ] && sru_ver_suff=""
 
     local sru_bug_fillstr="SRU_BUG_NUMBER_HERE" sru_bug_string="" skip_bugs=""
+    [ "${bug_refs_in_clog}" = "true" ] && skip_bugs="--skip-bugs"
     if [ -n "$sru_ver_suff" ]; then
         sru_bug_string="(LP: #$sru_bug_fillstr)"
         skip_bugs="--skip-bugs"
@@ -169,6 +186,7 @@ main() {
 
     new_pkg_debian="0ubuntu1"
     new_upstream_ver=$(git describe --abbrev=8 "${from_ref}")
+    upstream_hash=$(git rev-parse --short=8 "${from_ref}")
     new_pkg_ver="${new_upstream_ver}-${new_pkg_debian}${sru_ver_suff}"
 
     case "$new_upstream_ver" in
@@ -225,8 +243,8 @@ main() {
                 git rm --force "$dpseries" ||
                     fail "failed removing empty $dpseries: git rm $dpseries"
             fi
-            msg="drop cherry picks before merge from ${from_ref}"
-            msg="${msg} at $new_upstream_ver"
+            msg="drop cherry picks included in ${from_ref}"
+            msg="${msg} commit ${upstream_hash}"
             msg="$msg${CR}${CR}drop the following cherry picks:"
             for file in $drops; do
                 git rm "$file" || fail "failed to git rm $file"
@@ -236,7 +254,10 @@ main() {
         fi
     fi
 
-    local clog="${TEMP_D}/changelog" gitlog="${TEMP_D}/gitlog"
+    local pre_merge=""
+    pre_merge="$(git rev-parse HEAD)"
+    debug 1 "After patches dropped, at $pre_merge"
+
     git merge "${from_ref}" -m "merge from $from_ref at $new_upstream_ver" ||
         fail "failed: git merge ${from_ref} -m 'merge from $from_ref ..'"
 
@@ -260,15 +281,32 @@ main() {
         rm -Rf .pc
         if [ -n "$refreshed" ]; then
             msg=$(
-                echo "refresh patches"
+                echo "refresh patches against ${from_ref} commit" \
+                    "$upstream_hash"
                 echo
-                echo "refresh patches against upstream ${new_upstream_ver}:"
+                echo "refresh patches against ${from_ref} commit" \
+                     "${upstream_hash}:"
                 for i in ${refreshed}; do echo "  $i"; done)
             git commit -m "$msg" $refreshed ||
                 fail "failed to commit refreshed patches: $refreshed"
         fi
     fi
 
+    if [ "$update_patches_only" = "true" ]; then
+        # We merged above and then refreshed patches as a way to get
+        # code we needed to refresh against.  Now we revert back to
+        # pre merge and cherry-pick the refresh changes.
+        local cur_hash=""
+        cur_hash=$(git rev-parse HEAD)
+        git reset --hard "$pre_merge" ||
+            fail "failed to reset back to before-merge commit $pre_merge"
+        git cherry-pick "$cur_hash" ||
+            fail "failed to cherry-pick $cur_hash on $pre_merge"
+        debug 1 "Exiting after updated patches."
+        exit 0
+    fi
+
+    local clog="${TEMP_D}/changelog" gitlog="${TEMP_D}/gitlog"
     git log --first-parent --no-decorate --format=full \
         "${prev_pkg_hash}..${from_ref}" >  "$gitlog" ||
         fail "failed git log ${prev_pkg_hash}..${from_ref}"
@@ -332,7 +370,7 @@ main() {
     local tag=""
     tag=$(echo "ubuntu/$new_pkg_ver" | tr '~' '_')
     release_suffix=""
-    if [ -z "$skip_bugs" ]; then
+    if [ -n "${sru_ver_suff}" ]; then
         release_suffix="-proposed"
     fi
     cat <<EOF
