@@ -107,6 +107,48 @@ cleanup() {
 }
 
 
+add_changelog_entries() {
+    # if top commit has UNRELEASED, then add these to that.
+    # otherwise, add a new entry.  Basically similar behavior
+    # to what 'dch -i' gives you.
+    # the entries need to be indented properly (  * your-entry)
+    local entries="$1" version="$2" dist="" unrel_entries="" tmp="" out=""
+    local changelog="debian/changelog" old="${TEMP_D}/old-changes"
+    local pkg_name="" new="${TEMP_D}/unreleased-changes"
+    dist=$(dpkg-parsechangelog --show-field Distribution)
+    pkg_name=$(dpkg-parsechangelog --show-field Source)
+    if [ "$dist" = "UNRELEASED" ]; then
+        unrel_entries=$(
+            dpkg-parsechangelog --count=1 --show-field Changes | tail -n +4)
+        if [ -z "$version" ]; then
+            version=$(
+                dpkg-parsechangelog --count=1 --show-field Version)
+        fi
+        local pver=""
+        pver=$(dpkg-parsechangelog --offset 1 --count=1 --show-field Version)
+        sed -n "/ (${pver})/,\$p" "debian/changelog" > "$old"
+    else
+        if [ -z "$version" ]; then
+            local lastnum=""
+            out=$(dpkg-parsechangelog --count=1 --show-field Version)
+            tmp=${out%?}
+            lastnum=${out#${tmp}}
+            version=${tmp}$((lastnum+1))
+        fi
+        cp "$changelog" "$old"
+    fi
+    {
+    echo "$pkg_name ($version) UNRELEASED; urgency=medium"
+    echo
+    if [ -n "${unrel_entries}" ]; then
+        echo "${unrel_entries}"
+    fi
+    echo "$entries"
+    printf "\n -- %s <%s>  %s\n\n" "$DEBFULLNAME" "$DEBEMAIL" "$(date -R)"
+    } > "$new"
+    cat "$new" "$old" > "$changelog"
+}
+
 main() {
     local short_opts="h:v"
     local long_opts="help,bugs,update-patches-only,no-bugs,no-prompt,skip-branch-name-check,verbose"
@@ -251,6 +293,15 @@ main() {
                 msg="${msg}$CR  ${file##*/}"
             done
             git commit -m "$msg" "$dpseries" $drops
+
+            msg="  * drop the following cherry-picks now included:"
+            for file in $drops; do
+                msg="${msg}$CR    + ${file##*/}"
+            done
+            add_changelog_entries "$msg" ||
+                fail "failed adding changelog entry cherry-pick drops."
+            git commit -m "update changelog." debian/changelog ||
+                fail "failed to commit changelog changes for drops."
         fi
     fi
 
@@ -289,21 +340,36 @@ main() {
                 for i in ${refreshed}; do echo "  $i"; done)
             git commit -m "$msg" $refreshed ||
                 fail "failed to commit refreshed patches: $refreshed"
+            msg=$(
+                echo "  * refresh patches:"
+                for i in ${refreshed}; do echo "   + $i"; done)
+            add_changelog_entries "$msg" ||
+                fail "failed adding changelog entry for refresh"
+            git commit -m "update changelog." debian/changelog ||
+                fail "failed to commit changelog changes."
         fi
     fi
 
     if [ "$update_patches_only" = "true" ]; then
+        if [ -z "$drops" -o -z "$refreshed" ]; then
+            error "No patches updated. Nothing to commit."
+            return 0
+        fi
+
         # We merged above and then refreshed patches as a way to get
         # code we needed to refresh against.  Now we revert back to
         # pre merge and cherry-pick the refresh changes.
-        local cur_hash=""
-        cur_hash=$(git rev-parse HEAD)
+        local update_hash="" refresh_hash=""
+        refresh_hash=$(git rev-parse HEAD^)
+        update_hash=$(git rev-parse HEAD)
         git reset --hard "$pre_merge" ||
             fail "failed to reset back to before-merge commit $pre_merge"
-        git cherry-pick "$cur_hash" ||
-            fail "failed to cherry-pick $cur_hash on $pre_merge"
+        git cherry-pick "$refresh_hash" ||
+            fail "failed to cherry-pick $refresh_hash on $pre_merge"
+        git cherry-pick "$update_hash" ||
+            fail "failed to cherry-pick update commit $update_hash."
         debug 1 "Exiting after updated patches."
-        exit 0
+        return 0
     fi
 
     local clog="${TEMP_D}/changelog" gitlog="${TEMP_D}/gitlog"
@@ -311,39 +377,15 @@ main() {
         "${prev_pkg_hash}..${from_ref}" >  "$gitlog" ||
         fail "failed git log ${prev_pkg_hash}..${from_ref}"
 
-    {
-    echo "$pkg_name ($new_pkg_ver) UNRELEASED; urgency=medium"
-    echo
-    if [ -n "${unreleased_changes}" ]; then
-        echo "${unreleased_changes}"
-    fi
-    if [ -n "$drops" ]; then
-        echo "  * Drop the following cherry picks in debian/patches."
-        echo "    They are now incorporated in the upstream source:"
-        for i in ${drops}; do echo "    + ${i##*/}"; done
-    fi
-    if [ -n "${refreshed}" ]; then
-        echo "  * Refresh patches against upstream:"
-        for i in ${refreshed}; do echo "    + ${i##*/}"; done
-    fi
-
-    echo "  * $new_msg${sru_bug_string:+ ${sru_bug_string}}"
-    git_log_to_dch $skip_bugs < "$gitlog" ||
-        fail "failed git_log_to_dch"
-    printf "\n -- %s <%s>  %s\n\n" "$DEBFULLNAME" "$DEBEMAIL" "$(date -R)"
-    } > "$clog"
+    local entries=""
+    entries=$(
+        echo "  * $new_msg${sru_bug_string:+ ${sru_bug_string}}"
+        git_log_to_dch $skip_bugs < "$gitlog") ||
+            fail "failed git_log_to_dch"
+    add_changelog_entries "$entries" "${new_pkg_ver}" || fail
 
     git_log_to_dch < "$gitlog" > "new-upstream-changes.txt" ||
         fail "failed git_log_to_dch"
-
-    {
-        cat "$clog" &&
-            sed -n "/${prev_released_pkg_ver}/,\$p" "debian/changelog"
-    } > "${TEMP_D}/newlog" ||
-        fail "failed writing new changelog"
-
-    cp "$TEMP_D/newlog" "debian/changelog" ||
-        fail "failed replacing debian/changelog"
 
     dch -e || fail "dch -e exited $?"
 
