@@ -111,23 +111,6 @@ Last, we need to push our tag above.
 ### cherry-picked changes ###
 This is generally not the mechanism that is preferred for any release supported by trunk.  It may be used in order to get a upload in *really quickly* for a hot fix.
 
-**Note**: Doing this will break the daily packaging recipes until the cherry-picks are reverted from the packaging branch.  This is because the recipe will try to build from trunk, and will fail to apply your cherry-picked patch.  This makes sense... it will grab trunk and then try to apply patches, but the cherry-picked patch will already exist.
-
-After the SRU is accepted into -proposed we can drop the cherry-picks on the ubuntu/release branch.   To do this:
-
-    $ git checkout ubuntu/xenial  # or whatever release.
-    $ new-upstream-snapshot -v --update-patches-only
-    $ git push upstream HEAD
-
-That will produce 1 or 2 commits on the branch with summary like:
-
-  * refresh patches against master commit 2d6e4219
-  * drop cherry picks included in master commit 2d6e4219
-
-After doing that you can go to the recipe pages (see below) and click
-build-now.
-
-
 #### Cherry-pick Process
 The tool for doing this is in ``uss-tableflip/scripts/cherry-pick``.  It takes as import a commit-ish that it will create a cherry-pick from.
 
@@ -147,7 +130,22 @@ The tool will:
 From here you follow along with the snapshot upload process from
 [`dch --release` and beyond](#upstream-snapshot-process).
 
-**Note**: After doing uploading, in order to keep the daily builds working, we will then have to revert change.  See an example in [commit 9f159f3a5](https://git.launchpad.net/cloud-init/commit/?h=ubuntu/xenial&id=9f159f3a5)
+**Note**: After doing uploading, in order to keep the daily builds working, we will then have to revert change.  This is because the recipe will try to build from trunk, and will fail to apply your cherry-picked patch.  This makes sense... it will grab trunk and then try to apply patches, but the cherry-picked patch will already exist.
+
+To do this:
+
+    $ git checkout ubuntu/xenial  # or whatever release.
+    $ new-upstream-snapshot -v --update-patches-only
+    $ git push upstream HEAD
+
+That will produce 1 or 2 commits on the branch with summary like:
+
+  * refresh patches against master commit 2d6e4219
+  * drop cherry picks included in master commit 2d6e4219
+
+After doing that you can go to the recipe pages (see below) and click
+build-now.
+
 
 ## Outside Uploads ##
 Any core-dev of ubuntu can upload to cloud-init in an SRU or development
