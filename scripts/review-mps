@@ -50,7 +50,14 @@ GIT_REMOTE_PATH_TMPL = 'git+ssh://{lp_user}@git.launchpad.net/{project}'
 
 ### Comment templates
 BUG_MESSAGE_UPSTREAM_COMMIT_TMPL = '''
-An upstream commit landed for this bug.
+This bug is fixed with commit {commitish} to {project} on branch {branch}.
+
+To view that commit see the following URL:
+https://git.launchpad.net/{project}/commit/?id={commitish}
+'''
+
+MP_MESSAGE_UPSTREAM_COMMIT_TMPL = '''
+This merge has landed in commit {commitish} to {project} branch {branch}.
 
 To view that commit see the following URL:
 https://git.launchpad.net/{project}/commit/?id={commitish}
@@ -403,16 +410,19 @@ def main():
             subp(push_cmd, skip=bool('publish' in skips))
             commitish = subp(['git', 'log', '-n', '1', '--pretty=%H'])
             bug_comment = BUG_MESSAGE_UPSTREAM_COMMIT_TMPL.format(
-                commitish=commitish.strip()[:8], project=args.project_name)
+                commitish=commitish.strip()[:8], project=args.project_name,
+                branch=upstream_branch)
+            mp_comment = MP_MESSAGE_UPSTREAM_COMMIT_TMPL.format(
+                commitish=commitish.strip()[:8], project=args.project_name,
+                branch=upstream_branch)
+
             skip_bug_ops = set(['bugs', 'publish'])
             skip_bugs = bool(skip_bug_ops.intersection(skips))
             set_bug_status(
                 lp, args.project_name, commit_msg, 'Fix Committed',
                 bug_comment, skip_bugs)
             if (source_mp.queue_status != 'Merged' and 'publish' not in skips):
-                source_mp.createComment(
-                    subject='%s upstream commit landed' % args.project_name,
-		    content=bug_comment)
+                source_mp.createComment(content=mp_comment)
                 source_mp.setStatus(status='Merged', revid=commitish.strip())
                 source_mp.lp_save()
             log('✔: {merge_url}'.format(merge_url=source_mp.web_link))
