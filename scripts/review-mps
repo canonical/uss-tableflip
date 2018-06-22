@@ -4,7 +4,7 @@
 
 from argparse import ArgumentParser
 from launchpadlib.launchpad import Launchpad
-from subprocess import check_output, Popen, PIPE
+from subprocess import Popen, PIPE
 import os
 import re
 import sys
@@ -14,6 +14,7 @@ DRYRUN = False
 
 # TODO Add upstream tasks to bugs if they don't already exist
 
+
 def error(message):
     if isinstance(message, bytes):
         message = message.decode('utf-8')
@@ -22,33 +23,34 @@ def error(message):
 
 
 def log(message, verbosity=0):
-   '''Print a message to logs when VERBOSITY >= verbosity.'''
-   if VERBOSITY >= verbosity:
-       print(message)
+    '''Print a message to logs when VERBOSITY >= verbosity.'''
+    if VERBOSITY >= verbosity:
+        print(message)
 
 
 def subp(cmd, skip=False):
-   log('$ {command}'.format(command=' '.join(cmd)),
-       verbosity=0 if (DRYRUN or skip) else 1)
-   if skip:
-       return
-   proc = Popen(cmd, stdout=PIPE, stderr=PIPE)
-   out, err = proc.communicate()
-   if proc.returncode:
-       error(err if err else out)
-   return out.decode('utf-8')
+    log('$ {command}'.format(command=' '.join(cmd)),
+        verbosity=0 if (DRYRUN or skip) else 1)
+    if skip:
+        return
+    proc = Popen(cmd, stdout=PIPE, stderr=PIPE)
+    out, err = proc.communicate()
+    if proc.returncode:
+        error(err if err else out)
+    return out.decode('utf-8')
 
 
 VALID_MP_STATUSES = [
     'Work in progress', 'Needs review', 'Approved', 'Rejected', 'Merged',
     'Code failed to merge', 'Queued', 'Superseded']
 GIT_MAX_WIDTH = 74
-RE_MERGE_URL_TMPL = r'https://code.launchpad.net/~(?P<lpuser>[^/]+)/{project}/\+git/{project}/\+merge/\d+'
+RE_MERGE_URL_TMPL = (r'https://code.launchpad.net/~(?P<lpuser>[^/]+)/'
+                     r'{project}/\+git/{project}/\+merge/\d+')
 RE_LP_BUG_IDS = 'LP:(,? #\d+)+\s*$'
 GIT_REMOTE_PATH_TMPL = 'git+ssh://{lp_user}@git.launchpad.net/{project}'
 
 
-### Comment templates
+# Comment templates
 BUG_MESSAGE_UPSTREAM_COMMIT_TMPL = '''
 This bug is fixed with commit {commitish} to {project} on branch {branch}.
 
@@ -95,7 +97,8 @@ def get_parser():
               ' Default: False'))
     parser.add_argument(
         '--dryrun', required=False, default=False, action='store_true',
-        help=('Run commands and review operation in dryrun mode, making not changes.'))
+        help=('Run commands and review operation in dryrun mode, '
+              'making not changes.'))
     parser.add_argument(
         '--status', required=False, default='Approved',
         choices=VALID_MP_STATUSES,
@@ -157,7 +160,7 @@ def scrub_commit_msg(mp, source_path):
         overflow_count = len(line) - GIT_MAX_WIDTH
         if overflow_count > 0:
             # TODO actually fix line width and carry overflow to next line.
-            line_beginning =  line[:line.find(' ', 20)]
+            line_beginning = line[:line.find(' ', 20)]
             errors.append(
                 'Line #{line_num} has {overflow_count} too many characters.'
                 ' Line starts with: "{beginning}"...'.format(
@@ -185,7 +188,7 @@ def handle_commit_message_errors(source_mp, error_message, project_name, skip):
     content = COMMIT_MESSAGE_LINTS_TMPL.format(
         project_name=project_name, errors=error_message,
         max_line_length=GIT_MAX_WIDTH,
-        rtd_project_name=project_name.replace('-',''))
+        rtd_project_name=project_name.replace('-', ''))
     log('✗: marked "Work in progress": {0}\n{1}'.format(
             source_mp.web_link, error_message))
     if skip:
@@ -228,9 +231,9 @@ def prompt_source_mp(source_mps):
     log(header)
     log(seperator)
     for row in rows:
-       log('| {0: <6} | {1: <{width_url}} | {2: <{width_summary}} |'.format(
-               row[0], row[1], row[2],
-               width_url=width_url, width_summary=width_summary))
+        log('| {0: <6} | {1: <{width_url}} | {2: <{width_summary}} |'.format(
+                row[0], row[1], row[2],
+                width_url=width_url, width_summary=width_summary))
     log(seperator)
     choice = ''
     valid_choices = [str(choice) for choice in range(len(source_mps))]
@@ -341,7 +344,7 @@ def set_bug_status(lp, project, commit_msg, bug_status, bug_comment, skip):
         if match:
             bug_ids.extend(
                 [re.sub('#|,', '', bug)
-                for bug in match.group().split() if '#' in bug])
+                 for bug in match.group().split() if '#' in bug])
     if bug_ids:
         bug_ids = set(bug_ids)
         log('Setting status of bugs to {0}:\n{1}'.format(
