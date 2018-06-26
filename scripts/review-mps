@@ -446,7 +446,9 @@ def main():
                 lp, args.project_name, commit_msg, 'Fix Committed',
                 bug_comment, skip_bugs)
             if (source_mp.queue_status != 'Merged' and 'publish' not in skips):
-                source_mp.createComment(content=mp_comment)
+                source_mp.createComment(
+                    subject='%s merge proposal landed' % args.project_name,
+                    content=mp_comment)
                 source_mp.setStatus(status='Merged', revid=commitish.strip())
                 source_mp.lp_save()
             log('✔: {merge_url}'.format(merge_url=source_mp.web_link))
