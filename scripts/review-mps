@@ -136,6 +136,10 @@ def get_parser():
 def scrub_commit_msg(mp, source_path):
     '''Attempt to scrub commit message and set commit message if unset.
 
+    @param mp: String of the source_mp.source_git_path with
+        'refs/heads' stripped.
+    @param source_path: String of the source_mp.source_git_path with
+        'refs/heads' stripped.
     @raises: ValueError on invalid commit message format.
     '''
     source_remote = 'publish_source'
@@ -299,6 +303,14 @@ def merge_source_mp(lp, project, source_mp, source_path, commit_msg):
     '''Merge source_mp into the current local branch.
 
     Also mark the bugs referenced in the commit message as Fix committed.
+
+    @param lp: Launchpad API instance
+    @param project: The name of the project affecting this bug.
+    @param source_mp: The launchpadlib.MergeProposal object for this branch.
+    @param source_path: String of the source_mp.source_git_path with
+        'refs/heads' stripped.
+    @param commit_msg: The commit message of the branch which may contain
+        LP: #<bug_id> links.
     '''
     source_remote = 'publish_source'
     subp(['git', 'merge', '{0}{1}'.format(source_remote, source_path),
@@ -316,7 +328,16 @@ def merge_source_mp(lp, project, source_mp, source_path, commit_msg):
 
 
 def set_bug_status(lp, project, commit_msg, bug_status, bug_comment, skip):
-    '''Close any bugs specifically called out in the commit message.'''
+    '''Set bugs status any bugs specifically called out in the commit_msg.
+
+    @param lp: Launchpad API instance
+    @param project: The name of the project affecting this bug.
+    @param commit_msg: The commit message of the branch which may contain
+        LP: #<bug_id> links.
+    @param bug_comment: The comment text that will be added to the linked bug.
+    @param skip: Boolean, set True to dryrun and perform no operations against
+        launchpad.
+    '''
     bug_ids = []
     for line in commit_msg.splitlines():
         match = re.match(RE_LP_BUG_IDS, line)
