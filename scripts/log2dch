@@ -91,7 +91,7 @@ bzr_log_to_dch() {
 }
 
 
-print_hackio() {
+print_hackmd() {
     local commit="$1" subject="$2" author="$3" bugs="$4" aname="" abugs=""
     local buf="" bug="" t=""
     local url="${COMMIT_URL}"
@@ -183,7 +183,7 @@ assert_temp_d() {
 
 main() {
     local short_opts="ht:v"
-    local long_opts="commit-url:,hackio,help,trello,vcs:,verbose"
+    local long_opts="commit-url:,hackmd,help,trello,vcs:,verbose"
     local getopt_out=""
     getopt_out=$(getopt --name "${0##*/}" \
         --options "${short_opts}" --long "${long_opts}" -- "$@") &&
@@ -197,7 +197,7 @@ main() {
         case "$cur" in
             -h|--help) Usage ; exit 0;;
                --trello) omode="trello";;
-               --hackio) omode="hackio";;
+               --hackmd) omode="hackmd";;
                --commit-url) COMMIT_URL="$next";;
             -t|--vcs) vcs="$next";
                 case "$vcs" in
@@ -241,7 +241,7 @@ main() {
 
     case "$omode" in
         trello) printer="print_trello";;
-        hackio) printer="print_hackio";;
+        hackmd) printer="print_hackmd";;
         *) printer="print_dch";;
     esac
     local func="${vcs}_log_to_dch"
