@@ -9,7 +9,7 @@ fail() { local r=$?;  [ $r -eq 0 ] && r=1; failrc "$r" "$@"; }
 failrc() { local r=$1; shift; [ $# -eq 0 ] || error "$@"; exit "$r"; }
 
 Usage() {
-	cat <<EOF
+    cat <<EOF
 Usage: ${0##*/} [ options ] [input-file]
 
    Read input-file which is a git or bzr log and create a
@@ -52,13 +52,13 @@ EOF
 
 bad_Usage() { Usage 1>&2; [ $# -eq 0 ] || error "$@"; return 1; }
 cleanup() {
-	[ -z "${TEMP_D}" -o ! -d "${TEMP_D}" ] || rm -Rf "${TEMP_D}"
+    [ -z "${TEMP_D}" -o ! -d "${TEMP_D}" ] || rm -Rf "${TEMP_D}"
 }
 
 debug() {
-	local level=${1}; shift;
-	[ "${level}" -gt "${VERBOSITY}" ] && return
-	error "${@}"
+    local level=${1}; shift;
+    [ "${level}" -gt "${VERBOSITY}" ] && return
+    error "${@}"
 }
 
 bzr_log_to_dch() {
@@ -102,7 +102,7 @@ print_hackio() {
         [ -z "$bugmd" ] && pre="LP: "
         bugmd="${bugmd}[$pre${bug}](https://pad.lv/$bug),"
     done
-	bugmd=${bugmd%,}
+    bugmd=${bugmd%,}
     t=${commit#????????}
     buf="- ${bugmd:+${bugmd} }${subject}"
     buf="${buf} \[[${commit%$t}]($url${commit%$t})\]"
@@ -175,77 +175,77 @@ git_log_to_dch() {
 }
 
 assert_temp_d() {
-	TEMP_D=$(mktemp -d "${TMPDIR:-/tmp}/${0##*/}.XXXXXX") ||
-		fail "failed creating temp directory";
+    TEMP_D=$(mktemp -d "${TMPDIR:-/tmp}/${0##*/}.XXXXXX") ||
+        fail "failed creating temp directory";
 }
 
 main() {
-	local short_opts="ht:v"
-	local long_opts="commit-url:,hackio,help,trello,vcs:,verbose"
-	local getopt_out=""
-	getopt_out=$(getopt --name "${0##*/}" \
-		--options "${short_opts}" --long "${long_opts}" -- "$@") &&
-		eval set -- "${getopt_out}" ||
-		{ bad_Usage; return; }
+    local short_opts="ht:v"
+    local long_opts="commit-url:,hackio,help,trello,vcs:,verbose"
+    local getopt_out=""
+    getopt_out=$(getopt --name "${0##*/}" \
+        --options "${short_opts}" --long "${long_opts}" -- "$@") &&
+        eval set -- "${getopt_out}" ||
+        { bad_Usage; return; }
 
-	local cur="" next="" vcs="auto" input="-" omode="dch"
+    local cur="" next="" vcs="auto" input="-" omode="dch"
 
-	while [ $# -ne 0 ]; do
-		cur="$1"; next="$2";
-		case "$cur" in
-			-h|--help) Usage ; exit 0;;
-			   --trello) omode="trello";;
-			   --hackio) omode="hackio";;
-			   --commit-url) COMMIT_URL="$next";;
-			-t|--vcs) vcs="$next";
-				case "$vcs" in
-					auto|git|bzr)
-						bad_Usage "vcs must be one of auto, git, bzr.";
-						return;;
-				esac
-				;;
-			-v|--verbose) VERBOSITY=$((VERBOSITY+1));;
-			--) shift; break;;
-		esac
-		shift;
-	done
+    while [ $# -ne 0 ]; do
+        cur="$1"; next="$2";
+        case "$cur" in
+            -h|--help) Usage ; exit 0;;
+               --trello) omode="trello";;
+               --hackio) omode="hackio";;
+               --commit-url) COMMIT_URL="$next";;
+            -t|--vcs) vcs="$next";
+                case "$vcs" in
+                    auto|git|bzr)
+                        bad_Usage "vcs must be one of auto, git, bzr.";
+                        return;;
+                esac
+                ;;
+            -v|--verbose) VERBOSITY=$((VERBOSITY+1));;
+            --) shift; break;;
+        esac
+        shift;
+    done
 
-	[ $# -le 1 ] || { bad_Usage "got $# arguments, expected 0 or 1"; return; }
+    [ $# -le 1 ] || { bad_Usage "got $# arguments, expected 0 or 1"; return; }
 
-	[ $# -eq 1 ] && { input="$1"; shift; }
-	trap cleanup EXIT
+    [ $# -eq 1 ] && { input="$1"; shift; }
+    trap cleanup EXIT
 
-	local oinput="$input"
-	if [ "$vcs" = "auto" ]; then
-		if [ "$input" = "-" ]; then
-			assert_temp_d
-			input="${TEMP_D}/input"
-			cat > "$input"
-		fi
-		if grep -q '^revno:' "$input"; then
-			vcs="bzr"
-		elif grep -q '^commit ' "$input"; then
-			vcs="git"
-		else
-			error "failed to figure out vcs type in $oinput"
-			return
-		fi
-	fi
+    local oinput="$input"
+    if [ "$vcs" = "auto" ]; then
+        if [ "$input" = "-" ]; then
+            assert_temp_d
+            input="${TEMP_D}/input"
+            cat > "$input"
+        fi
+        if grep -q '^revno:' "$input"; then
+            vcs="bzr"
+        elif grep -q '^commit ' "$input"; then
+            vcs="git"
+        else
+            error "failed to figure out vcs type in $oinput"
+            return
+        fi
+    fi
 
-	if [ "$input" != "-" ]; then
-		exec < "$input" ||
-			{ error "failed to open $input for reading"; return 1; }
-	fi
+    if [ "$input" != "-" ]; then
+        exec < "$input" ||
+            { error "failed to open $input for reading"; return 1; }
+    fi
 
     case "$omode" in
         trello) printer="print_trello";;
         hackio) printer="print_hackio";;
         *) printer="print_dch";;
     esac
-	local func="${vcs}_log_to_dch"
-	"$func" "$printer"
-	return
+    local func="${vcs}_log_to_dch"
+    "$func" "$printer"
+    return
 }
 
 main "$@"
-# vi: ts=4 noexpandtab
+# vi: ts=4 expandtab
