@@ -129,7 +129,9 @@ print_dch() {
     local i=""
     #( for i in ${bugs}; do echo ${i%,}; done); return
     aname=${author% <*}
-    [ "${aname}" = "Scott Moser" ] && aname=""
+    case "$aname" in
+        Chad\ Smith|Ryan\ Harper|Scott\ Moser) aname="";;
+    esac
     abugs="${aname:+ [${aname}]}${bugs:+ (LP: ${bugs})}"
     if [ $((${#subject}+${#abugs})) -le $((ll-${#indent})) ]; then
         echo "${indent}${subject}${abugs}"
