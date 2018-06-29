@@ -1,5 +1,9 @@
-#!/usr/bin/python3
-"""Attach a file to a bug."""
+#!/usr/bin/python
+"""Attach a file to a bug.
+
+Note this is stuck in python 2 until binary attachment corruption bug
+is fixed.  https://bugs.launchpad.net/bugs/1425575.
+"""
 
 import argparse
 import os
