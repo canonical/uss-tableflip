@@ -1,0 +1,143 @@
+#!/bin/bash
+
+VERBOSITY=0
+TEMP_D=""
+
+error() { echo "$@" 1>&2; }
+fail() { local r=$?;  [ $r -eq 0 ] && r=1; failrc "$r" "$@"; }
+failrc() { local r=$1; shift; [ $# -eq 0 ] || error "$@"; exit $r; }
+
+Usage() {
+    cat <<EOF
+Usage: ${0##*/} [ options ] BUG URL
+
+   Download jenkins artifacts and console log from URL, And attach to BUG.
+
+   options:
+      -h | --help       show help
+      -v | --verbose    be more verbose.
+      -n | --dry-run    do not actually attach anything to launchpad.
+EOF
+}
+
+bad_Usage() { Usage 1>&2; [ $# -eq 0 ] || error "$@"; return 1; }
+cleanup() {
+    [ -z "${TEMP_D}" -o ! -d "${TEMP_D}" ] || rm -Rf "${TEMP_D}"
+}
+
+debug() {
+    local level=${1}; shift;
+    [ "${level}" -gt "${VERBOSITY}" ] && return
+    error "${@}"
+}
+
+check_path() {
+	local prog="" recheck=${1:-0} missing="" progs="jenkins-get lp-attach"
+	for prog in $progs; do
+		command -v $prog >/dev/null 2>&1 || missing="$missing $prog"
+	done
+	missing=${missing# }
+	[ -z "$missing" ] && return 0
+	[ $recheck = 0 ] || { error "did not find: $missing"; return 1; }
+	local mypath="" mydir=""
+	mypath=$(readlink -f "$0")
+	mydir=${mypath%/*}
+	PATH="$PATH:$mydir"
+	check_path 1
+}
+
+attach() {
+    local dry="$1" x=""
+    shift;
+    if $dry; then
+        lp-attach-file --dry-run "$@"
+    else
+        lp-attach-file "$@"
+    fi
+}
+
+main() {
+    local short_opts="hnv"
+    local long_opts="help,dry-run,verbose"
+    local getopt_out=""
+    getopt_out=$(getopt --name "${0##*/}" \
+        --options "${short_opts}" --long "${long_opts}" -- "$@") &&
+        eval set -- "${getopt_out}" ||
+        { bad_Usage; return; }
+
+    local cur="" next="" bug="" url="" dry_run=false;
+
+    while [ $# -ne 0 ]; do
+        cur="$1"; next="$2";
+        case "$cur" in
+            -h|--help) Usage ; exit 0;;
+            -n|--dry-run) dry_run=true;;
+            -v|--verbose) VERBOSITY=$((${VERBOSITY}+1));;
+            --) shift; break;;
+        esac
+        shift;
+    done
+
+    [ $# -eq 2 ] || { bad_Usage "Got $# args, expected 2"; return; }
+
+	bug="$1"
+	url="$2"
+	check_path || return 1
+
+    TEMP_D=$(mktemp -d "${TMPDIR:-/tmp}/${0##*/}.XXXXXX") ||
+        fail "failed to make tempdir"
+    trap cleanup EXIT
+
+    local exurl="https://jenkins.ubuntu.com/server/job/"
+    exurl="${exurl}cloud-init-integration-proposed-a/16/"
+    case "$url" in
+        http*jenkins*/cloud-init-integration-proposed-*/[0-9]*) :;;
+        *) error "Url doesn't look right. Expected one like: $exurl"; exit 1;;
+    esac
+    local t="" rel="" job=""
+    t=${url#*/cloud-init-integration-proposed-}
+    job="cloud-init-integration-proposed-${t}"
+    job=${job%%/*}
+    num=${t#*/}
+    num=${num%%/*}
+    # t gets the one letter release from 'cloud-init-integration-proposed-a'
+    t=${t%%/*}
+    rel=$(ubuntu-distro-info --supported | grep "^$t")
+    [ -n "$rel" ] || { error "Could not get release for '$t'"; return 1; }
+
+    local comment=""
+    comment="integration test results for release $rel."
+
+    cd "$TEMP_D"
+    jenkins-get "$url" ||
+        { error "jenkins-get $url failed."; return 1; }
+
+    rm -f *.zip
+    local fname="" name="" found=false
+    
+    for fname in *; do
+        [ -f "$fname" ] || continue
+        desc="$rel integration test results [jenkins $job/$num]"
+        comment="Attach integration tests results from $url."
+        case "$fname" in
+            *-artifacts.tar.xz)
+                name="$rel-integration-artifacts.tar.xz"
+                desc="$desc artifacts"
+                ;;
+            *-console.log)
+                name="$rel-integration-console.log"
+                desc="$desc console log."
+                ;;
+            *) error "ignoring $fname"; continue;;
+        esac
+        found=true
+        attach $dry_run "--comment=$comment" "--description=$desc" \
+            "--name=$name" "$bug" "$fname" ||
+            fail "Failed to attach $fname to $bug"
+    done
+    $found || fail "something went wrong. Did not attach anything."
+    return 0
+}
+
+main "$@"
+# vi: ts=4 expandtab
