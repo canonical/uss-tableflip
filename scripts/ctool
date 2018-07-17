@@ -1,0 +1,849 @@
+#!/bin/bash
+# shellcheck disable=2015,2016,2039,2162,2166
+#
+set -u
+set -f
+
+VERBOSITY=0
+KEEP=true
+CONTAINER=""
+DEFAULT_WAIT_MAX=30
+TEMP_D=""
+_APT_UPDATED=false
+
+error() { echo "$@" 1>&2; }
+fail() { [ $# -eq 0 ] || error "$@"; exit 1; }
+errorrc() { local r=$?; error "$@" "ret=$r"; return $r; }
+
+Usage_main() {
+    cat <<EOF
+Usage: ${0##*/} mode [options]
+
+  A convenient frontend to lxc containers.
+
+  global options:
+     -v | --verbose: increase verbosity
+
+  subcommands:
+   run-container                [--destroy] [--name=] source [command]
+   wait-for-boot [--container=]
+   execute       [--container=] [--dir=] [--user=] command
+   add-user      [--container=] user
+
+   git-export    [--dirty]
+   git-import    [--container=] [--dir=] [--user=] target_d
+   git-clone     [--container=] [--dir=] [--user=] git_url target_dir
+
+  For more detailed output of subcommand see: '${0##*/}' <subcommand> --help
+EOF
+}
+
+bad_Usage() {
+    local usage="Usage_${1}"
+    shift
+    $usage 1>&2
+    [ $# -eq 0 ] || error "$@";
+    return 1;
+}
+
+cleanup() {
+    if [ -n "$CONTAINER" ]; then
+        if [ "$KEEP" = "true" ]; then
+            debug 1 "not deleting container '$CONTAINER'."
+        else
+            debug 1 "deleting container '$CONTAINER' due to --destroy"
+            delete_container "$CONTAINER"
+        fi
+    fi
+    [ -z "${TEMP_D}" -o ! -d "${TEMP_D}" ] || rm -Rf "${TEMP_D}"
+}
+
+debug() {
+    local level=${1}; shift;
+    [ "${level}" -gt "${VERBOSITY}" ] && return
+    [ -n "${_container:-}" ] && set -- "[${_container}]" "$@"
+    error "${@}"
+}
+
+vflag() {
+    [ "$VERBOSITY" = "0" ] && return
+    local flag="-" i=0
+    while [ $i -lt $VERBOSITY ] && i=$((i+1)); do
+        flag="${flag}v"
+    done
+    echo "$flag"
+}
+
+filter_installed_packages() {
+    # write to stdout, a list of packages not installed locally
+    local fmt='${Package} ${Version}\n'
+    LC_ALL=C dpkg-query --show "--showformat=${fmt}" "$@" 2>&1 | awk '
+        $0 ~ /[Nn]o packages/ {
+            sub("[.]$","",$NF);
+            pkgs[n]=$NF;
+            n=n+1;
+        }
+        $2 == "" {
+                pkgs[n]=$1;
+                n=n+1;
+        };
+        END { for(p in pkgs) {printf("%s ",pkgs[p])}; printf("\n"); }' n=0
+}
+
+apt_install() {
+    local needed
+    needed=$(filter_installed_packages "$@")
+    needed=${needed% }
+    if [ -z "$needed" ]; then
+        debug 1 "all $# packages were already installed."
+        return 0
+    fi
+    debug 1 "installing $# packages (new $needed)."
+    apt_get install "$@"
+}
+
+apt_get() {
+    local ret=""
+    if [ "$1" != "update" ] && ! $_APT_UPDATED; then
+        debug 1 "updating apt"
+        apt_get update >/dev/null || {
+            ret=$?;
+            error "failed to update apt [$ret]";
+            return $ret;
+        }
+        _APT_UPDATED=true
+    fi
+    sudo DEBIAN_FRONTEND=noninteractive apt-get --quiet \
+        --no-install-recommends --assume-yes "$@" </dev/null
+}
+
+Usage_install_packages() {
+    cat <<EOF
+install-deps [options] [packages]
+
+    -c | --container  CONTAINER     operate inside CONTAINER
+EOF
+}
+
+install_packages() {
+    call_in_env self "${FUNCNAME[0]}" "$@" --user=root && return "$_RET"
+    set -- "${_RET_CMD[@]}"
+
+    local short_opts="hv"
+    local long_opts="help,verbose"
+    local getopt_out=""
+    getopt_out=$(getopt --name "${FUNCNAME[0]}" \
+        --options "${short_opts}" --long "${long_opts}" -- "$@") &&
+        eval set -- "${getopt_out}" ||
+        { bad_Usage "${FUNCNAME[0]}"; return; }
+
+    local cur="" next=""
+    while [ $# -ne 0 ]; do
+        cur="${1:-}"; next="${2:-}";
+        case "$cur" in
+            -v|--verbose) VERBOSITY=$((VERBOSITY+1));;
+            --) shift; break;;
+        esac
+        shift;
+    done
+    apt_install "$@"
+}
+
+Usage_run_container() {
+    cat <<EOF
+run-container [options] source [cmd]
+
+    run a container from 'source'.
+    execute command 'cmd' after system is booted.
+
+    options:
+      -a | --artifacts DIR   copy artifacts to DIR (default=./artifacts)
+           --copy-out  DIR   copy contents of DIR to artifacts dir.
+      -G | --git url         clone url (use '.' to push current git dir)
+                             url can be git_repo@commitish to checkout commitish
+      -D | --destroy         destroy the container after finishing.
+           --install  PKGS   PKGS is a comma or space separated list of packages.
+      -n | --name     NAME   create container named NAME.  default name is random.
+
+Examples:
+    * Check out simplestreams git and run it's tox.
+      ${0##*/} run-container -vv --destroy ubuntu-daily:bionic \\
+           --git=https://git.launchpad.net/simplestreams -- \\
+           sh -c 'sudo apt-get update -q && ./tools/install-deps tox && tox'
+EOF
+}
+
+run_container() {
+    local short_opts="a:DG:hn:v"
+    local long_opts="artifacts:,copy-out:,destroy,git:,help,install:,name:,verbose"
+    local getopt_out=""
+    getopt_out=$(getopt --name "${FUNCNAME[0]}" \
+        --options "${short_opts}" --long "${long_opts}" -- "$@") &&
+        eval set -- "${getopt_out}" ||
+        { bad_Usage run_container; return; }
+
+    local cur="" next=""
+    local name="" giturl="" install="" artifacts="artifacts/"
+    local -a copy_out=( ) cmd=( )
+    while [ $# -ne 0 ]; do
+        cur="${1:-}"; next="${2:-}";
+        case "$cur" in
+            -a|--artifacts) artifacts="${next%/}/";;
+               --copy-out) copy_out[${#copy_out[@]}]="$next";;
+            -h|--help) "Usage_${FUNCNAME[0]}"; return 0;;
+            -G|--git) giturl="$next"; shift;;
+            -D|--destroy) KEEP=false;;
+               --install) install=$(echo "$install" "$next" | sed 's/,/ /g');;
+            -n|--name) name="$next";;
+            -v|--verbose) VERBOSITY=$((VERBOSITY+1));;
+            --) shift; break;;
+        esac
+        shift;
+    done
+    [ $# -ge 1 ] || {
+        bad_Usage "${FUNCNAME[0]}" "got $# args, expected 2"
+        return
+    }
+
+    trap cleanup EXIT
+    local source=$1
+    shift
+    if [ -z "$name" ]; then
+        command -v petname >/dev/null 2>&1 || {
+            error "no 'petname' command available. must provide name."
+            return
+        }
+        name=$(petname) || { error "petname failed"; return 1; }
+    fi
+
+    if [ "${source#*:}" = "${source}" ]; then
+        source="ubuntu-daily:${source}"
+    fi
+    lxc launch "$source" "$name" || {
+        errorrc "failed lxc launch $source $name";
+        return
+    }
+    CONTAINER="$name"
+
+    local cflag="--container=$name"
+    # shellcheck disable=SC2046
+    wait_for_boot $(vflag) "$cflag" || {
+        errorrc "$name did not finish booting."
+        return
+    }
+
+    if [ -n "$install" ]; then
+        # shellcheck disable=SC2046,SC2086
+        install_packages $(vflag) "$cflag" $install || {
+            errorrc "Failed to install packages: $install"
+            return
+        }
+    fi
+
+    local user="ci-user" dirty="1"
+    # shellcheck disable=SC2046
+    add_user $(vflag) "$cflag" "$user" || return
+
+    local dir="" git_d=""
+    if [ -d "$giturl" ]; then
+        git_d=$(cd "$giturl" && basename "$PWD") ||
+            { error "failed getting basename of $git_d"; return 1; }
+        git_push_clone  "$cflag" "--user=$user" ${dirty:+--dirty} \
+            "$giturl" "$git_d" || return
+    elif [ -n "$giturl" ]; then
+        git_d="git-clone"
+        git_clone "$cflag" "--user=$user" "$giturl" "$git_d" || return
+    fi
+    [ -n "$git_d" ] && dir="$git_d"
+
+    if [ "${#cmd[@]}" != "0" ]; then
+        execute "$cflag" "--dir=$dir" "--user=$user" "${cmd[@]}"
+    fi
+
+    if [ "${#copy_out[@]}" != 0 ]; then
+        local path="" fpath=""
+        [ -d "$artifacts" ] || mkdir -p "$artifacts" ||
+            { error "Failed to create artifacts dir '$artifacts'"; return 1; }
+        debug 1 "copying ${copy_out[*]} to artifacts dir $artifacts"
+        for path in "${copy_out[@]}"; do
+            fpath="$path"
+            if [ "$path" = "." ]; then
+                fpath="/home/$user/$dir/"
+            elif [ "${path#/}" = "${path}" ]; then
+                fpath="/home/$user/$dir/$path"
+            fi
+            lxc file pull --recursive "$name/$fpath" "$artifacts/"
+        done
+    fi
+}
+
+Usage_git_push_clone() {
+    cat <<EOF
+git-push-clone [options] src target
+  export the current repo and import it as USER in DIR.
+
+  -c | --container CONTAINER    import into CONTAINER
+  -u | --user      USER         import as USER
+  -d | --dir       dir          import into DIR
+  -D | --dirty                  apply changes in current repo to pushed repo.
+EOF
+}
+
+git_push_clone() {
+    local short_opts="dhDc:u:v"
+    local long_opts="container:,dir:,dirty,help,user:,verbose"
+    getopt_out=$(getopt --name "${FUNCNAME[0]}" \
+        --options "${short_opts}" --long "${long_opts}" -- "$@") &&
+        eval set -- "${getopt_out}" ||
+        { bad_Usage "${FUNCNAME[0]}"; return; }
+
+    local container="" user="" dir="" dirty=""
+    while [ $# -ne 0 ]; do
+        cur="${1:-}"; next="${2:-}";
+        case "$cur" in
+            -c|--container) container=$next; shift;;
+            -h|--help) "Usage_${FUNCNAME[0]}"; return 0;;
+            -u|--user) user=$next; shift;;
+            -d|--dir) dir=$next; shift;;
+            -D|--dirty) dirty=true;;
+            -v|--verbose) VERBOSITY=$((VERBOSITY+1));;
+            --) shift; break;;
+        esac
+        shift;
+    done
+    [ $# -eq 2 ] || { bad_Usage git_push_clone "Expected 2 args, got $#"; return; }
+    local src="$1" target="$2"
+    (
+    set -o pipefail
+    git_export ${dirty:+--dirty} "$src" |
+        git_import ${container:+"--container=$container"} \
+            ${user:+"--user=$user"} ${dir:+"--dir=$dir"} "$target"
+    )
+}
+
+Usage_wait_for_boot() {
+cat <<EOF
+Usage: ${0##*/}
+wait_for_boot [--container]
+
+Wait for the container to finish booting.
+
+options:
+  -m | --max-wait  MAX    wait up to MAX seconds before giving up.
+  -v | --verbose          be more verbose
+EOF
+}
+
+wait_for_boot() {
+    call_in_env self "${FUNCNAME[0]}" "$@" && return "$_RET"
+    set -- "${_RET_CMD[@]}"
+
+    local short_opts="m:v"
+    local long_opts="max-wait:,verbose"
+    getopt_out=$(getopt --name "${FUNCNAME[0]}" \
+        --options "${short_opts}" --long "${long_opts}" -- "$@") &&
+        eval set -- "${getopt_out}" ||
+        { bad_Usage wait_for_boot; return; }
+
+    local wtime=$DEFAULT_WAIT_MAX container="${_container:-}"
+    while [ $# -ne 0 ]; do
+        cur="${1:-}"; next="${2:-}";
+        case "$cur" in
+            -v|--verbose) VERBOSITY=$((VERBOSITY+1));;
+            -m|--max-wait) wtime="$next"; shift;;
+            --) shift; break;;
+        esac
+        shift;
+    done
+
+    local i=0 check="is_done_other" up=""
+    if [ -x /usr/bin/cloud-init ]; then
+        check=is_done_cloudinit
+    elif [ -e /run/systemd ]; then
+        check=is_done_systemd
+    fi
+    debug 2 "check is $check"
+    while ! $check $i; do
+        i=$((i+1));
+        [ "$i" -ge "$wtime" ] &&
+            { debug 0 "gave up waiting for boot after $wtime"; return 1; }
+        [ "${VERBOSITY}" = "0" ] || echo -n .
+        sleep 1
+    done
+    if [ "$VERBOSITY" != "0" ]; then
+        read up _ </proc/uptime
+        local msg="${i:+done after $i }uptime=${up}s"
+        debug 1 "$msg"
+    fi
+}
+
+is_done_cloudinit() {
+    _RET=""
+    [ -e "/run/cloud-init/result.json" ]
+}
+
+is_done_systemd() {
+    local s="" num="$1"
+    s=$(systemctl is-system-running 2>&1);
+    _RET="$? $s"
+    case "$s" in
+        initializing|starting) return 1;;
+        *[Ff]ailed*connect*bus*)
+            # warn if not the first run.
+            [ "$num" -lt 5 ] ||
+                error "Failed to connect to systemd bus [${_RET%% *}]";
+            return 1;;
+    esac
+    return 0
+}
+
+is_done_other() {
+    local out=""
+    out=$(getent hosts ubuntu.com 2>&1)
+    return
+}
+
+
+execute() {
+    call_in_env "$@" && return "$_RET"
+    set -- "${_RET_CMD[@]}"
+    local dir="${_RET_DIR}" sdir="$PWD"
+    ( set -e; cd ~; cd "${dir:-.}"; "$@" )
+}
+
+Usage_add_user() {
+    cat <<EOF
+add-user [--container=] user
+
+Add the user 'user'.  Gives the user passwordless sudo also.
+EOF
+}
+
+add_user() {
+    call_in_env self "${FUNCNAME[0]}" "$@" && return "$_RET"
+    set -- "${_RET_CMD[@]}"
+
+    local short_opts="hv"
+    local long_opts="help,verbose"
+    local getopt_out=""
+    getopt_out=$(getopt --name "${FUNCNAME[0]}" \
+        --options "${short_opts}" --long "${long_opts}" -- "$@") &&
+        eval set -- "${getopt_out}" ||
+        { bad_Usage add_user; return; }
+
+    local cur="" next="" user=""
+    while [ $# -ne 0 ]; do
+        cur="${1:-}"; next="${2:-}";
+        case "$cur" in
+            -h|--help) "Usage_${FUNCNAME[0]}"; return 0;;
+            -v|--verbose) VERBOSITY=$((VERBOSITY+1));;
+            --) shift; break;;
+        esac
+        shift;
+    done
+    [ $# -eq 1 ] || { bad_Usage add_user "Expected 1 arg (user), got $# ($*)"; return; }
+    user="$1"
+    shift
+
+    local home="/home/$user"
+    debug 1 "adding user $user"
+    useradd "$user" --create-home "--home-dir=$home" || {
+        errorrc "${container:+[${container}] }Failed to add user '$user'" \
+            "in '$name'";
+        return
+    }
+    local sline="$user ALL=(ALL) NOPASSWD:ALL"
+    ( umask 226 && echo "$sline" > "/etc/sudoers.d/$user-user" ) ||
+        { errorrc "Failed to add user to sudoers.d"; return; }
+}
+
+call_in_env() {
+    # call_in_env(cmd)
+    # process cmd, removing --container, --user, --dir flags
+    # if the current environment matches --container and --user flags
+    # the return 1 and populate _RET_CMD and _RET_DIR with cleaned command.
+    # if the current environment does not match, then execute self in an
+    # environment that will match.
+    # return:
+    #   rc (return rc): will be 0 if the environment matches and 1 otherwise.
+    #   _RET_DIR      : will have the value of --dir=.
+    #                   working directory must be checked/handled by caller.
+    #   _RET_CMD      : an array of the command with --container/--dir flags removed.
+    #   _RET          : if rc was 0, this is the return value of the command executed.
+    local cur_user="" cur_container="${_container:-}" self="false"
+    local container="" user="" dir="" need_stdin=false
+    local -a cmd=( ) args=( )
+    _RET_CMD=( )
+    _RET="1"
+    _RET_DIR=""
+    while [ $# -gt 0 ]; do
+        cur="$1"; next="${2:-}"
+        case "$cur" in
+            -c|--container) container="$next"; shift;;
+            --container=*) container="${cur#*=}";;
+            -u|--user) user="$next"; shift;;
+            --user=*) user="${cur#*=}";;
+            -d|--dir) dir="$next"; shift;;
+            --dir=*) dir=${cur#*=};;
+            --need-stdin) need_stdin=true;;
+            --) shift; break;;
+            *) args[${#args[@]}]="$cur";;
+        esac
+        shift
+    done
+    args=( "${args[@]}" "$@" )
+
+    [ "${args[0]}" = "self" ] && { self=true; args=( "${args[@]:1}" ); }
+
+    cur_user="$(id -un)"
+    case "${container}:${user}" in
+        ${cur_container}:${cur_user}|:${cur_user}|${cur_container}:|:)
+            _RET_DIR="$dir"
+            [ "$self" = "true" ] && _RET_CMD=( "${args[@]:1}" ) ||
+                _RET_CMD=( "${args[@]}" )
+            return 1;
+    esac
+
+    debug 2 "self=$self container=$container cur_container=$cur_container" \
+        "user=$user cur_user=$cur_user dir=$dir pwd=$PWD ${args[*]}"
+    if [ "$self" = "true" -a "${0##*/}" = "bash" ]; then
+        error "Cannot execute $container.$user.$dir already executing stdin."
+        _RET=99
+        _RET_DIR=""
+        return 0
+    fi
+
+    local -a copyenv=(
+        ${http_proxy:+http_proxy="${http_proxy}"}
+        ${https_proxy:+http_proxy="${http_proxy}"}
+        ${no_proxy:+no_proxy="${no_proxy}"}
+    )
+
+    set -- sh -ec 'd="$1"; shift; cd ~ ; cd ${d:+"$d"}; exec "$@"' \
+        changedir "$dir"
+    if [ -z "$container" -o "${cur_container}" = "$container" ]; then
+        if [ -n "$user" -a "$user" != "${cur_user}" ]; then
+            set -- sudo "${copyenv[@]}" "--user=$user" --set-home -- "$@"
+        fi
+    else
+        if [ "$user" != "root" -a -n "$user" ]; then
+            set -- sudo "${copyenv[@]}" "--user=$user" --set-home -- "$@"
+            copyenv=( )
+        fi
+        if [ -n "$container" ]; then
+            set -- lxc exec "$container" -- env "${copyenv[@]}" \
+                "_container=$container" "$@"
+        fi
+    fi
+
+    local qcmd="$*"
+    command -v shell-quote >/dev/null 2>&1 &&
+        qcmd=$(shell-quote "$@" "${args[@]}")
+
+    local ret=""
+    if [ "$self" = "true" ]; then
+        debug 3 "self-from-$0 stdin=${need_stdin}: $qcmd"
+        if [ "$need_stdin" = "true" ]; then
+            local fname="" mktexe=""
+            mktexe=( lxc exec "$container" -- sh -c
+                'x=$(mktemp) && cat > "$x" && chmod 755 "$x" && echo "$x"')
+            if fname=$("${mktexe[@]}" <"$0"); then
+                "$@" "$fname" self "${args[@]}"
+                ret=$?
+                lxc exec "$name" -- rm -f "$fname" || {
+                    errorrc "WARN: Failed to remove $fname from $container.";
+                    ret=$?
+                }
+            else
+                errorrc "failed to write to tmp file in $name"
+                ret=$?
+            fi
+        else
+            "$@" bash -s -- self "${args[@]}" <"$0"
+            ret=$?
+        fi
+    else
+        debug 3 "running: $qcmd"
+        "$@" "${args[@]}"
+        ret=$?
+    fi
+    _RET=$ret
+    _RET_DIR=""
+    return 0
+}
+
+Usage_git_clone() {
+    cat <<EOF
+git-clone [--container] [--user] [--dir] git-url [target-dir]
+
+   Clone git-url into target-dir.
+
+git-url is of format: 'git_url@commit-ish'
+
+   If commit-ish is
+      branch: checkout the branch
+      commit or tag:  checkout with detached head.
+
+   Example:
+    * ${0##*/} git-clone --container=your-container --user=ubuntu \\
+          https://git.launchpad.net/cloud-init@ubuntu/devel my-cloud-init
+EOF
+}
+
+git_clone() {
+    call_in_env self "${FUNCNAME[0]}" "$@" && return "$_RET"
+    set -- "${_RET_CMD[@]}"
+    local dir="${_RET_DIR}" sdir="$PWD"
+
+    local short_opts="hv"
+    local long_opts="help,verbose"
+    local getopt_out=""
+    getopt_out=$(getopt --name "${FUNCNAME[0]}" \
+        --options "${short_opts}" --long "${long_opts}" -- "$@") &&
+        eval set -- "${getopt_out}" ||
+        { bad_Usage "${FUNCNAME[0]}"; return; }
+
+    local cur="" next="" giturl=""
+    while [ $# -ne 0 ]; do
+        cur="${1:-}"; next="${2:-}";
+        case "$cur" in
+            -h|--help) "Usage_${FUNCNAME[0]}"; return 0;;
+            -v|--verbose) VERBOSITY=$((VERBOSITY+1));;
+            --) shift; break;;
+        esac
+        shift;
+    done
+    [ $# -eq 1 -o $# -eq 2 ] || {
+        bad_Usage "${FUNCNAME[0]}" "Expected 1 arg (giturl), got $#"
+        return
+    }
+    local giturl=$1 target=${2:-}
+    local gitrepo="" commitish=""
+    gitrepo=${giturl%@*}
+    case "$giturl" in
+        *://*@*)
+            gitrepo=${giturl%@*}
+            commitish=${giturl##*@}
+            ;;
+    esac
+    if [ -z "$target" ]; then
+        target="${gitrepo##*/}"
+        target=${target%.git}
+    fi
+
+    change_dir "$dir"
+
+    git clone "$gitrepo" "$target" || {
+        errorrc "Failed git clone $gitrepo $target"
+        return
+    }
+    if [ -n "$commitish" ]; then
+        cd "$target"
+        local branch=""
+        branch=$(git branch -r |
+            awk '$NF == name { print $NF; exit(0); }' target="origin/$commitish")
+        if [ -n "$branch" ]; then
+            git checkout -b "$branch" "origin/$branch" || {
+                error "Failed git checkout -b $commitish origin/$commitish";
+                cd "$sdir"
+                return 1;
+            }
+        else
+            git checkout "$commitish" || {
+                error "Failed git checkout $commitish";
+                cd "$sdir"
+                return 1
+            }
+        fi
+    fi
+    cd "$sdir"
+    return 0
+}
+
+
+Usage_git_export() {
+    cat <<EOF
+git-export [--dirty] dir
+
+export the current git dir.
+
+Usefull in
+   ${0##*/} git-export --dirty |
+      ${0##*/} git-import --container=xx --user=ubuntu --dir=ci-dir
+EOF
+}
+
+git_export() {
+    local short_opts="Dhv"
+    local long_opts="dirty,help,verbose"
+    local getopt_out=""
+    getopt_out=$(getopt --name "${FUNCNAME[0]}" \
+        --options "${short_opts}" --long "${long_opts}" -- "$@") &&
+        eval set -- "${getopt_out}" ||
+        { bad_Usage git_export; return; }
+
+    local cur="" next="" dirty=false
+    while [ $# -ne 0 ]; do
+        cur="${1:-}"; next="${2:-}";
+        case "$cur" in
+            -h|--help) "Usage_${FUNCNAME[0]}"; return 0;;
+            -D|--dirty) dirty=true; shift;;
+            -v|--verbose) VERBOSITY=$((VERBOSITY+1));;
+            --) shift; break;;
+        esac
+        shift;
+    done
+    if [ $# -ne 0 -a $# -ne 1 ]; then
+        bad_Usage "${FUNCNAME[0]}" "Expected 0 or 1 args, got $#"
+        return
+    fi
+    local src=${1:-$PWD}
+
+    TEMP_D=$(mktemp -d "${TMPDIR:-/tmp}/${0##*/}.XXXXXX") ||
+        fail "failed to make tempdir"
+    trap cleanup EXIT
+
+    cd "$src"
+    gitdir=$(git rev-parse --git-dir) || {
+        errorrc "Failed to get git dir in $PWD";
+        return
+    }
+    local t=${gitdir%/*}
+    case "$t" in
+        */worktrees)
+            [ -f "${t%worktrees}/config" ] && gitdir="${t%worktrees}";;
+    esac
+
+    # attempt to get branch name.
+    commitish=$(git rev-parse --abbrev-ref HEAD) || {
+        errorrc "Failed git rev-parse --abbrev-ref HEAD"
+        return
+    }
+    if [ "$commitish" = "HEAD" ]; then
+        # detached head
+        commitish=$(git rev-parse HEAD) || {
+            errorrc "failed git rev-parse HEAD"
+            return
+        }
+    fi
+
+    local local_changes=false
+    if ! git diff --quiet "$commitish"; then
+        # there are local changes not committed.
+        local_changes=true
+        if [ "$dirty" = "false" ]; then
+            error "WARNING: You had uncommitted changes.  Those changes will "
+            error "be put into 'ge-local-changes.diff' inside the container. "
+            error "To test these changes you must pass --dirty."
+        fi
+    fi
+
+    debug 1 "local_changes=$local_changes dirty=$dirty"
+    local cname=""
+    local -a tarcmd=( )
+    echo "$commitish" > "${TEMP_D}/ge-commitish"
+    tarcmd=( tar -cpf - -C "$gitdir" . -C "${TEMP_D}" ge-commitish )
+    if [ "$local_changes" = "true" ]; then
+        [ "$dirty" = "true" ] && cname="ge-apply-changes.diff" ||
+            cname="ge-local-changes.diff"
+        debug 2 "wrote changes to $cname."
+        git diff "$commitish" > "${TEMP_D}/$cname" || {
+            error "failed to get local changes"
+            return 1
+        }
+        tarcmd=( "${tarcmd[@]}" -C "${TEMP_D}" "$cname" )
+    fi
+
+    debug 1 "collecting ${gitdir} local_changes=$local_changes dirty=$dirty."
+    "${tarcmd[@]}"
+}
+
+Usage_git_import() {
+    cat <<EOF
+git-import  [--container=] [--dir=] [--user=] git-dir
+
+import/extract output of git-export.
+EOF
+}
+
+change_dir() {
+    local dir="$1"
+    [ -n "$dir" ] || return 0
+    cd ~
+    cd "$dir"
+}
+
+git_import() {
+    call_in_env self "${FUNCNAME[0]}" --need-stdin "$@" && return "$_RET"
+    set -- "${_RET_CMD[@]}"
+    local dir="${_RET_DIR}" sdir="$PWD"
+
+    local short_opts="hv"
+    local long_opts="help,verbose"
+    local getopt_out=""
+    getopt_out=$(getopt --name "${FUNCNAME[0]}" \
+        --options "${short_opts}" --long "${long_opts}" -- "$@") &&
+        eval set -- "${getopt_out}" ||
+        { bad_Usage git_import; return; }
+
+    local cur="" next="" out=""
+    while [ $# -ne 0 ]; do
+        cur="${1:-}"; next="${2:-}";
+        case "$cur" in
+            -h|--help) "Usage_${FUNCNAME[0]}"; return 0;;
+            -v|--verbose) VERBOSITY=$((VERBOSITY+1));;
+            --) shift; break;;
+        esac
+        shift;
+    done
+    [ $# -eq 1 ] || { bad_Usage "${FUNCNAME[0]}" "Expected 1 arg, got $#"; return; }
+    local git_d="$1"
+    shift
+
+    change_dir "$dir"
+    debug 1 "extracting as '$(id -un)' in '$dir' to $git_d"
+    rm -Rf "${git_d:?}/" || { error "failed rm $dir"; return 1; }
+    mkdir -p "$git_d/.git" ||
+        { error "failed create $git_d/.git"; return 1; }
+    cd "$git_d/.git" || { error "failed cd $git_d/.git"; return 1; }
+    tar xpf - ||
+        { error "failed extracting from stdin"; return 1; }
+    local commitish=""
+    read commitish < ge-commitish
+    rm ge-commitish
+
+    cd ..
+    git config core.bare false
+    out=$(git checkout "$commitish" 2>&1) ||
+        { error "failed git checkout $commitish: $out" 1>&2; return 1; }
+    out=$(git checkout . 2>&1) ||
+        { error "failed git checkout .: $out" 1>&2; return 1; }
+
+    if [ -f ".git/ge-apply-changes.diff" ]; then
+        debug 2 "applying from .git/ge-apply-changes.diff"
+        git apply < .git/ge-apply-changes.diff ||
+            { error "failed applying changes"; return 1; }
+        rm -f ".git/ge-apply-changes.diff"
+    elif [ -f ".git/ge-local-changes.diff" ]; then
+        debug 2 "moving local-changes into place."
+        mv ".git/ge-local-changes.diff" "./ge-local-changes.diff" ||
+            { error "failed moving local changes to ."; return 1; }
+    fi
+
+    cd "$sdir" || { error "failed cd $dir"; return 1; }
+}
+
+
+delete_container() {
+    lxc delete --force "$1"
+}
+
+case "${1:-}" in
+    self) shift; "$@";;
+    install-deps|run-container|wait-for-boot|add-user|\
+    git-export|git-import|git-clone|git-push-clone|execute)
+        _n="${1//-/_}"; shift; "$_n" "$@";;
+    *) bad_Usage main; exit;;
+esac
+
+# vi: ts=4 expandtab
