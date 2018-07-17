@@ -208,6 +208,7 @@ run_container() {
     trap cleanup EXIT
     local source=$1
     shift
+    cmd=( "$@" )
     if [ -z "$name" ]; then
         command -v petname >/dev/null 2>&1 || {
             error "no 'petname' command available. must provide name."
@@ -257,7 +258,7 @@ run_container() {
     [ -n "$git_d" ] && dir="$git_d"
 
     if [ "${#cmd[@]}" != "0" ]; then
-        execute "$cflag" "--dir=$dir" "--user=$user" "${cmd[@]}"
+        execute "$cflag" "--dir=$dir" "--user=$user" -- "${cmd[@]}"
     fi
 
     if [ "${#copy_out[@]}" != 0 ]; then
@@ -633,6 +634,7 @@ git_clone() {
 
     change_dir "$dir"
 
+    debug 2 "Cloning $gitrepo to $target and checking out $commitish"
     git clone "$gitrepo" "$target" || {
         errorrc "Failed git clone $gitrepo $target"
         return
