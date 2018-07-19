@@ -182,9 +182,9 @@ run_container() {
         eval set -- "${getopt_out}" ||
         { bad_Usage run_container; return; }
 
-    local cur="" next=""
+    local cur="" next="" ret=""
     local name="" giturl="" install="" artifacts="artifacts/"
-    local -a copy_out=( ) cmd=( )
+    local -a copy_out=( ) cmd=( ) failures=( )
     while [ $# -ne 0 ]; do
         cur="${1:-}"; next="${2:-}";
         case "$cur" in
@@ -258,7 +258,11 @@ run_container() {
     [ -n "$git_d" ] && dir="$git_d"
 
     if [ "${#cmd[@]}" != "0" ]; then
-        execute "$cflag" "--dir=$dir" "--user=$user" -- "${cmd[@]}"
+        execute "$cflag" "--dir=$dir" "--user=$user" -- "${cmd[@]}" || {
+            ret=$?
+            error "command failed rc=$ret: ${cmd[*]}"
+            failures[${#failures[@]}]="command failed rc=$ret: ${cmd[*]}"
+        }
     fi
 
     if [ "${#copy_out[@]}" != 0 ]; then
@@ -273,9 +277,24 @@ run_container() {
             elif [ "${path#/}" = "${path}" ]; then
                 fpath="/home/$user/$dir/$path"
             fi
-            lxc file pull --recursive "$name/$fpath" "$artifacts/"
+            lxc file pull --recursive "$name$fpath" "$artifacts/" || {
+                error "Failed to copy out: $name$fpath"
+                failures[${#failures[@]}]="Failed to copy out: $name$fpath"
+            }
         done
     fi
+
+    if [ "${#failures[@]}" != "0" ]; then
+        local fail=""
+        [ "${#failures[@]}" = "1" ] &&
+            error "Found ${#failures[@]} failure:" ||
+            error "Found ${#failures[@]} failures:"
+        for fail in "${failures[@]}"; do
+            error "  $fail"
+        done
+        return 1
+    fi
+    return 0
 }
 
 Usage_git_push_clone() {
