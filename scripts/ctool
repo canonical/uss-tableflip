@@ -440,6 +440,9 @@ Usage_add_user() {
 add-user [--container=] user
 
 Add the user 'user'.  Gives the user passwordless sudo also.
+
+options:
+       --import-id ID       run ssh-import-id ID for the user.
 EOF
 }
 
@@ -448,7 +451,7 @@ add_user() {
     set -- "${_RET_CMD[@]}"
 
     local short_opts="hv"
-    local long_opts="help,verbose"
+    local long_opts="help,import-ids:,verbose"
     local getopt_out=""
     getopt_out=$(getopt --name "${FUNCNAME[0]}" \
         --options "${short_opts}" --long "${long_opts}" -- "$@") &&
@@ -456,10 +459,12 @@ add_user() {
         { bad_Usage add_user; return; }
 
     local cur="" next="" user=""
+    local -a import_ids=( )
     while [ $# -ne 0 ]; do
         cur="${1:-}"; next="${2:-}";
         case "$cur" in
             -h|--help) "Usage_${FUNCNAME[0]}"; return 0;;
+               --import-ids) import_ids[${#import_ids[@]}]="$next"; shift;;
             -v|--verbose) VERBOSITY=$((VERBOSITY+1));;
             --) shift; break;;
         esac
@@ -471,7 +476,7 @@ add_user() {
 
     local home="/home/$user"
     debug 1 "adding user $user"
-    useradd "$user" --create-home "--home-dir=$home" || {
+    useradd "$user" "--shell=/bin/bash" --create-home "--home-dir=$home" || {
         errorrc "${container:+[${container}] }Failed to add user '$user'" \
             "in '$name'";
         return
@@ -479,6 +484,13 @@ add_user() {
     local sline="$user ALL=(ALL) NOPASSWD:ALL"
     ( umask 226 && echo "$sline" > "/etc/sudoers.d/$user-user" ) ||
         { errorrc "Failed to add user to sudoers.d"; return; }
+
+    if [ "${#import_ids[@]}" != "0" ]; then
+        call_in_env --user="$user" ssh-import-id "${import_ids[@]}" ||
+            { errorrc "Failed to import-id for '$user'"; return; }
+    fi
+
+    return 0
 }
 
 call_in_env() {
