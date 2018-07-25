@@ -791,10 +791,6 @@ git_export() {
     fi
     local src=${1:-$PWD}
 
-    TEMP_D=$(mktemp -d "${TMPDIR:-/tmp}/${0##*/}.XXXXXX") ||
-        fail "failed to make tempdir"
-    trap cleanup EXIT
-
     cd "$src"
     gitdir=$(git rev-parse --git-dir) || {
         errorrc "Failed to get git dir in $PWD";
@@ -830,24 +826,32 @@ git_export() {
         fi
     fi
 
+    local tempd=""
+    tempd=$(mktemp -d "${TMPDIR:-/tmp}/${0##*/}.XXXXXX") ||
+        fail "failed to make tempdir"
+
     debug 1 "local_changes=$local_changes dirty=$dirty"
-    local cname=""
+    local cname="" ret=""
     local -a tarcmd=( )
-    echo "$commitish" > "${TEMP_D}/ge-commitish"
-    tarcmd=( tar -cpf - -C "$gitdir" . -C "${TEMP_D}" ge-commitish )
+    echo "$commitish" > "${tempd}/ge-commitish"
+    tarcmd=( tar -cpf - -C "$gitdir" . -C "${tempd}" ge-commitish )
     if [ "$local_changes" = "true" ]; then
         [ "$dirty" = "true" ] && cname="ge-apply-changes.diff" ||
             cname="ge-local-changes.diff"
         debug 2 "wrote changes to $cname."
-        git diff > "${TEMP_D}/$cname" || {
+        git diff > "${tempd}/$cname" || {
             error "failed to get local changes"
+            rm -Rf "${tempd}"
             return 1
         }
-        tarcmd=( "${tarcmd[@]}" -C "${TEMP_D}" "$cname" )
+        tarcmd=( "${tarcmd[@]}" -C "${tempd}" "$cname" )
     fi
 
     debug 1 "collecting ${gitdir} local_changes=$local_changes dirty=$dirty."
     "${tarcmd[@]}"
+    ret=$?
+    rm -Rf "${tempd}" || return
+    return $ret
 }
 
 Usage_git_import() {
