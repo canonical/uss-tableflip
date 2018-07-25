@@ -678,7 +678,7 @@ git_clone() {
     local gitrepo="" commitish=""
     gitrepo=${giturl%@*}
     case "$giturl" in
-        *://*@*)
+        *:*@*)
             gitrepo=${giturl%@*}
             commitish=${giturl##*@}
             ;;
