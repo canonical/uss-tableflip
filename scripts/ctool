@@ -66,9 +66,13 @@ debug() {
 }
 
 vflag() {
-    [ "$VERBOSITY" = "0" ] && return
+    # vflag([change=+0], [base=$VERBOSITY])
+    # write to stdout the 'vflag' (-v or -vv or -vvv) for expected verbosity.
+    #    vflag(-1, 3) = "-vv"
+    local myv=$((${2-${VERBOSITY}}${1:-+0}))
+    [ "$myv" = "0" ] && return
     local flag="-" i=0
-    while [ $i -lt $VERBOSITY ] && i=$((i+1)); do
+    while [ $i -lt $myv ] && i=$((i+1)); do
         flag="${flag}v"
     done
     echo "$flag"
@@ -232,6 +236,7 @@ run_container() {
 
     local cflag="--container=$name"
     # shellcheck disable=SC2046
+    debug 1 "Waiting for boot of container '$name'."
     wait_for_boot $(vflag) "$cflag" || {
         errorrc "$name did not finish booting."
         return
@@ -253,11 +258,14 @@ run_container() {
     if [ -d "$giturl" ]; then
         git_d=$(cd "$giturl" && basename "$PWD") ||
             { error "failed getting basename of $git_d"; return 1; }
-        git_push_clone  "$cflag" "--user=$user" ${dirty:+--dirty} \
+        # shellcheck disable=SC2046
+        git_push_clone $(vflag -1) "$cflag" "--user=$user" ${dirty:+--dirty} \
             "$giturl" "$git_d" || return
     elif [ -n "$giturl" ]; then
         git_d="git-clone"
-        git_clone "$cflag" "--user=$user" "$giturl" "$git_d" || return
+        # shellcheck disable=SC2046
+        git_clone $(vflag -1) "$cflag" "--user=$user" "$giturl" "$git_d" ||
+            return
     fi
     [ -n "$git_d" ] && dir="$git_d"
 
