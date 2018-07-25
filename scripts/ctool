@@ -262,7 +262,7 @@ run_container() {
         git_push_clone $(vflag -1) "$cflag" "--user=$user" ${dirty:+--dirty} \
             "$giturl" "$git_d" || return
     elif [ -n "$giturl" ]; then
-        git_d="git-clone"
+        parse_giturl "$giturl" target && git_d="$_RET" || return
         # shellcheck disable=SC2046
         git_clone $(vflag -1) "$cflag" "--user=$user" "$giturl" "$git_d" ||
             return
@@ -647,6 +647,33 @@ git-url is of format: 'git_url@commit-ish'
 EOF
 }
 
+parse_giturl() {
+    # parse_giturl(giturl [field])
+    local giturl="$1" field="${2:-}"
+    case "$giturl" in
+        lp:*@*|*://*@*)
+            repo="${giturl%@*}"
+            target=${repo##*/}
+            commitish=${giturl##*@};;
+        *)
+            repo="$giturl"
+            target="${repo##*/}"
+            commitish="";;
+    esac
+    target=${target%.git}
+    [ -z "$field" ] && _RET="$repo $target $commitish" && return
+    [ "$field" = "repo" ] && _RET="$repo" && return
+    [ "$field" = "target" ] && _RET="$target" && return
+    [ "$field" = "commitish" ] && _RET="$commitish" && return
+    [ "$field" = "debug" ] &&
+        debug 0 "giturl=$giturl ->" \
+            "repo=$repo target=$target ${commitish:-empty}" &&
+        return 0
+    error "parse_giturl($giturl, $field): invalid field"
+    _RET=""
+    return 1
+}
+
 git_clone() {
     call_in_env self "${FUNCNAME[0]}" "$@" && return "$_RET"
     set -- "${_RET_CMD[@]}"
@@ -676,16 +703,11 @@ git_clone() {
     }
     local giturl=$1 target=${2:-}
     local gitrepo="" commitish=""
-    gitrepo=${giturl%@*}
-    case "$giturl" in
-        *:*@*)
-            gitrepo=${giturl%@*}
-            commitish=${giturl##*@}
-            ;;
-    esac
+    parse_giturl "$giturl" repo && gitrepo=$_RET &&
+        parse_giturl "$giturl" commitish && commitish=$_RET ||
+        return
     if [ -z "$target" ]; then
-        target="${gitrepo##*/}"
-        target=${target%.git}
+        parse_giturl "$giturl" target && target=$_RET
     fi
 
     change_dir "$dir"
@@ -700,7 +722,7 @@ git_clone() {
         return
     }
 
-    debug 1 "Cloning $gitrepo to $target and checking out $commitish"
+    debug 1 "Cloning $gitrepo to $target. commitish='$commitish'."
     git clone "$gitrepo" "$target" || {
         errorrc "Failed git clone $gitrepo $target"
         return
