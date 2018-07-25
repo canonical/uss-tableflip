@@ -755,7 +755,7 @@ git_export() {
         cur="${1:-}"; next="${2:-}";
         case "$cur" in
             -h|--help) "Usage_${FUNCNAME[0]}"; return 0;;
-            -D|--dirty) dirty=true; shift;;
+            -D|--dirty) dirty=true;;
             -v|--verbose) VERBOSITY=$((VERBOSITY+1));;
             --) shift; break;;
         esac
