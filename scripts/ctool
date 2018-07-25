@@ -343,12 +343,15 @@ git_push_clone() {
         esac
         shift;
     done
-    [ $# -eq 2 ] || { bad_Usage git_push_clone "Expected 2 args, got $#"; return; }
+    [ $# -eq 2 ] || {
+        bad_Usage git_push_clone "Expected 2 args, got $#";
+        return;
+    }
     local src="$1" target="$2"
     (
     set -o pipefail
-    git_export ${dirty:+--dirty} "$src" |
-        git_import ${container:+"--container=$container"} \
+    git_export $(vflag -1) ${dirty:+--dirty} "$src" |
+        git_import $(vflag -1) ${container:+"--container=$container"} \
             ${user:+"--user=$user"} ${dir:+"--dir=$dir"} "$target"
     )
 }
@@ -866,7 +869,7 @@ git_import() {
     shift
 
     change_dir "$dir"
-    debug 1 "extracting as '$(id -un)' in '$dir' to $git_d"
+    debug 1 "extracting as '$(id -un)' in '$PWD' to $git_d"
     rm -Rf "${git_d:?}/" || { error "failed rm $dir"; return 1; }
     mkdir -p "$git_d/.git" ||
         { error "failed create $git_d/.git"; return 1; }
