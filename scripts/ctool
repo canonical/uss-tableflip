@@ -653,10 +653,12 @@ parse_giturl() {
     case "$giturl" in
         lp:*@*|*://*@*)
             repo="${giturl%@*}"
+            while [ "${repo%/}" != "${repo}" ]; do repo=${repo%/}; done
             target=${repo##*/}
             commitish=${giturl##*@};;
         *)
             repo="$giturl"
+            while [ "${repo%/}" != "${repo}" ]; do repo=${repo%/}; done
             target="${repo##*/}"
             commitish="";;
     esac
