@@ -70,7 +70,7 @@ vflag() {
     # write to stdout the 'vflag' (-v or -vv or -vvv) for expected verbosity.
     #    vflag(-1, 3) = "-vv"
     local myv=$((${2-${VERBOSITY}}${1:-+0}))
-    [ "$myv" = "0" ] && return
+    [ "$myv" -le "0" ] && return
     local flag="-" i=0
     while [ $i -lt $myv ] && i=$((i+1)); do
         flag="${flag}v"
