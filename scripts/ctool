@@ -820,13 +820,13 @@ git_export() {
     fi
 
     local local_changes=false
-    if ! git diff --quiet "$commitish"; then
-        # there are local changes not committed.
+    if ! git diff --quiet; then
+        # there are local changes not committed or staged.
         local_changes=true
         if [ "$dirty" = "false" ]; then
-            error "WARNING: You had uncommitted changes.  Those changes will "
-            error "be put into 'ge-local-changes.diff' inside the container. "
-            error "To test these changes you must pass --dirty."
+            error "WARNING: You had uncommitted and unstaged changes."
+            error "Those changes will be put into 'ge-local-changes.diff'"
+            error "inside the container. Use --dirty to test changes."
         fi
     fi
 
@@ -839,7 +839,7 @@ git_export() {
         [ "$dirty" = "true" ] && cname="ge-apply-changes.diff" ||
             cname="ge-local-changes.diff"
         debug 2 "wrote changes to $cname."
-        git diff "$commitish" > "${TEMP_D}/$cname" || {
+        git diff > "${TEMP_D}/$cname" || {
             error "failed to get local changes"
             return 1
         }
