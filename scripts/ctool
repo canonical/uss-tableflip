@@ -616,6 +616,16 @@ call_in_env() {
     return 0
 }
 
+add_lp_alias() {
+    local out="" lpurl="https://git.launchpad.net/" alias="lp:"
+    if out=$(git config --get-regexp "url[.].*" "^${alias}$"); then
+        debug 1 "Launchpad git alias already existed: ($out)"
+        return 0
+    fi
+    debug 1 "Adding Launchpad git alias ($alias -> $lpurl)."
+    git config --global "url.$lpurl.insteadof" "$alias"
+}
+
 Usage_git_clone() {
     cat <<EOF
 git-clone [--container] [--user] [--dir] git-url [target-dir]
@@ -677,7 +687,17 @@ git_clone() {
 
     change_dir "$dir"
 
-    debug 2 "Cloning $gitrepo to $target and checking out $commitish"
+    command -v git >/dev/null 2>&1 || {
+        error "No 'git' command in path."
+        return 1
+    }
+
+    add_lp_alias || {
+        error "Failed to add Launchpad git alias."
+        return
+    }
+
+    debug 1 "Cloning $gitrepo to $target and checking out $commitish"
     git clone "$gitrepo" "$target" || {
         errorrc "Failed git clone $gitrepo $target"
         return
