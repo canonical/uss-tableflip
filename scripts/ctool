@@ -120,9 +120,9 @@ apt_get() {
     local emd=""
     command -v eatmydata >/dev/null 2>&1 && emd="eatmydata"
     set -- sudo DEBIAN_FRONTEND=noninteractive $emd \
-        apt-get --quiet --no-install-recommends --assume-yes "$@" </dev/null
+        apt-get --quiet --no-install-recommends --assume-yes "$@"
     debug 1 "Installing depends: $*"
-    "$@"
+    "$@" </dev/null
 }
 
 Usage_install_packages() {
@@ -235,8 +235,8 @@ run_container() {
     CONTAINER="$name"
 
     local cflag="--container=$name"
-    # shellcheck disable=SC2046
     debug 1 "Waiting for boot of container '$name'."
+    # shellcheck disable=SC2046
     wait_for_boot $(vflag) "$cflag" || {
         errorrc "$name did not finish booting."
         return
@@ -348,6 +348,7 @@ git_push_clone() {
         return;
     }
     local src="$1" target="$2"
+    # shellcheck disable=SC2046
     (
     set -o pipefail
     git_export $(vflag -1) ${dirty:+--dirty} "$src" |
@@ -442,7 +443,7 @@ is_done_other() {
 execute() {
     call_in_env "$@" && return "$_RET"
     set -- "${_RET_CMD[@]}"
-    local dir="${_RET_DIR}" sdir="$PWD"
+    local dir="${_RET_DIR}"
     ( set -e; cd ~; cd "${dir:-.}"; "$@" )
 }
 
@@ -519,7 +520,7 @@ call_in_env() {
     #   _RET          : if rc was 0, this is the return value of the command executed.
     local cur_user="" cur_container="${_container:-}" self="false"
     local container="" user="" dir="" need_stdin=false
-    local -a cmd=( ) args=( )
+    local -a args=( )
     _RET_CMD=( )
     _RET="1"
     _RET_DIR=""
@@ -538,7 +539,7 @@ call_in_env() {
         esac
         shift
     done
-    args=( "${args[@]}" "$@" )
+    args=( ${args+"${args[@]}"} "$@" )
 
     [ "${args[0]}" = "self" ] && { self=true; args=( "${args[@]:1}" ); }
 
@@ -570,7 +571,7 @@ call_in_env() {
         changedir "$dir"
     if [ -z "$container" -o "${cur_container}" = "$container" ]; then
         if [ -n "$user" -a "$user" != "${cur_user}" ]; then
-            set -- sudo ${copyenv+"${copyenv[@]}"} \
+            set -- sudo ${copyenv:+"${copyenv[@]}"} \
                 "--user=$user" --set-home -- "$@"
         fi
     else
@@ -599,7 +600,7 @@ call_in_env() {
             if fname=$("${mktexe[@]}" <"$0"); then
                 "$@" "$fname" self "${args[@]}"
                 ret=$?
-                lxc exec "$name" -- rm -f "$fname" || {
+                lxc exec "$container" -- rm -f "$fname" || {
                     errorrc "WARN: Failed to remove $fname from $container.";
                     ret=$?
                 }
