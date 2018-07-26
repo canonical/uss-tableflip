@@ -570,15 +570,17 @@ call_in_env() {
         changedir "$dir"
     if [ -z "$container" -o "${cur_container}" = "$container" ]; then
         if [ -n "$user" -a "$user" != "${cur_user}" ]; then
-            set -- sudo "${copyenv[@]}" "--user=$user" --set-home -- "$@"
+            set -- sudo ${copyenv+"${copyenv[@]}"} \
+                "--user=$user" --set-home -- "$@"
         fi
     else
         if [ "$user" != "root" -a -n "$user" ]; then
-            set -- sudo "${copyenv[@]}" "--user=$user" --set-home -- "$@"
-            copyenv=( )
+            set -- sudo ${copyenv+"${copyenv[@]}"} \
+                "--user=$user" --set-home -- "$@"
         fi
         if [ -n "$container" ]; then
-            set -- lxc exec "$container" -- env "${copyenv[@]}" \
+            set -- lxc exec "$container" -- env \
+                ${copyenv+"${copyenv[@]}"} \
                 "_container=$container" "$@"
         fi
     fi
