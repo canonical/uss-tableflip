@@ -19,10 +19,10 @@ def main():
     parser.add_argument(
         '-a', '--artifacts', action='store_true', default=False,
         help='Download artifacts for build also.')
-    parser.add_argument('-O', '--output-dir', type=str,
-        default="./jenkins", help='Directory to write to')
-    parser.add_argument('--url', type=str,
-        default=JENKINS_URL, help='the url for jenkins to query')
+    parser.add_argument('-O', '--output-dir', type=str, default="./jenkins",
+                        help='Directory to write to')
+    parser.add_argument('--url', type=str, default=JENKINS_URL,
+                        help='the url for jenkins to query')
     parser.add_argument('--verbose', '-v', action='count', default=0)
 
     parser.add_argument('jobs', nargs='+', default=[])
