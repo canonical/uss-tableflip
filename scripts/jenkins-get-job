@@ -1,0 +1,78 @@
+#!/usr/bin/env python3
+
+import argparse
+import logging as log
+import os
+import sys
+import shutil
+import subprocess
+import urllib.request
+
+from jenkinsapi.jenkins import Jenkins
+
+JENKINS_URL = "https://jenkins.ubuntu.com/server/"
+
+
+def main():
+    parser = argparse.ArgumentParser()
+
+    parser.add_argument(
+        '-a', '--artifacts', action='store_true', default=False,
+        help='Download artifacts for build also.')
+    parser.add_argument('-O', '--output-dir', type=str,
+        default="./jenkins", help='Directory to write to')
+    parser.add_argument('--url', type=str,
+        default=JENKINS_URL, help='the url for jenkins to query')
+    parser.add_argument('--verbose', '-v', action='count', default=0)
+
+    parser.add_argument('jobs', nargs='+', default=[])
+
+    args = parser.parse_args()
+
+    server = Jenkins(args.url)
+
+    level = (log.ERROR, log.INFO, log.DEBUG)[min(args.verbose, 2)]
+    log.basicConfig(stream=sys.stderr, level=level)
+
+    os.makedirs(name=args.output_dir, exist_ok=True)
+    start_d = os.getcwd()
+
+    for jobname in args.jobs:
+        build_num = None
+        if "/" in jobname:
+            jobname, build_num = jobname.split("/")
+        job = server.get_job(jobname)
+        if build_num:
+            build = job.get_build(int(build_num))
+        else:
+            build = job.get_last_build()
+
+        status = build.get_status()
+        log.info("%s/%s [%s]", job, build.buildno, status)
+        build_d = os.path.sep.join(
+            [args.output_dir, jobname, str(build.buildno)])
+        os.makedirs(name=build_d, exist_ok=True)
+        console_path = os.path.sep.join([build_d, "console.log"])
+        with open(console_path, "w") as fp:
+            fp.write(build.get_console())
+        log.info(" Console in %s", console_path)
+        with open(os.path.sep.join([build_d, "status"]), "w") as fp:
+            fp.write(status)
+
+        if args.artifacts:
+            azip_name = "artifacts.zip"
+            zip_file = os.path.sep.join([build_d, azip_name])
+            log.info(" zip file to %s" % zip_file)
+            zip_url = build.baseurl + "/artifact/*zip*/archive.zip"
+            with urllib.request.urlopen(zip_url) as response:
+                with open(zip_file, "wb") as fp:
+                    shutil.copyfileobj(response, fp)
+            os.chdir(build_d)
+            subprocess.check_output(['unzip', azip_name])
+            os.chdir(start_d)
+
+
+if __name__ == '__main__':
+    main()
+
+# vi: ts=4 expandtab syntax=python
