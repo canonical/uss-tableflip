@@ -16,9 +16,12 @@ Usage: ${0##*/} [ options ] [input-file]
    debian/changelog formatted file from the result.
 
    options:
-      --vcs VCS   which log format is this ('git', 'auto', 'bzr')
-                  default: auto
-
+      --vcs VCS         which log format is this ('git', 'auto', 'bzr')
+                        default: auto
+      --trello          output in markdown for checklist items in trello
+      --hackmd          output markdown formated for hackmd.io
+      --commit-url=URL  use a different commit url.
+                        default=$COMMIT_URL
 
    Assuming git style log commit messages, this reads the makes the
    summary line into a debian/changelog style entry with author
