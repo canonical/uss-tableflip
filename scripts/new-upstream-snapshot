@@ -91,15 +91,18 @@ git_log_to_dch() {
     fi
 }
 
-run_quilt() {
+env_quilt() {
     local diffargs="-p ab --no-timestamps --no-index"
     QUILT_PATCHES="debian/patches" \
         QUILT_DIFF_OPTS="-p" \
         QUILT_PATCH_OPTS="--reject-format=unified" \
         QUILT_DIFF_ARGS="$diffargs --color=auto" \
         QUILT_REFRESH_ARGS="$diffargs" \
-        LANG=C \
-        quilt --quiltrc - "$@"
+        LANG=C "$@"
+}
+
+run_quilt() {
+    env_quilt quilt --quiltrc - "$@"
 }
 
 cleanup() {
@@ -147,6 +150,18 @@ add_changelog_entries() {
     printf "\n -- %s <%s>  %s\n\n" "$DEBFULLNAME" "$DEBEMAIL" "$(date -R)"
     } > "$new"
     cat "$new" "$old" > "$changelog"
+}
+
+refresh_shell() {
+    cat 1>&2 <<EOF
+Dropping you into a shell. Either do
+   a.) hand-apply fix ('quilt push -f' and 'quilt refresh'
+   b.) remove the patch from debian/patches if no longer needed.
+
+When finished, 'exit 0'.
+To abort, exit 1.
+EOF
+    env_quilt env debian_chroot="refresh-fix" "${SHELL:-/bin/bash}"
 }
 
 main() {
@@ -322,10 +337,20 @@ main() {
             ret=$?
             [ $ret -eq 2 ] && break
             [ $ret -ne 0 ] && fail "quilt next returned $ret: $npatch"
-            out=$(run_quilt push 2>&1) ||
+            if out=$(run_quilt push 2>&1); then
+                debug 1 "$npatch applied cleanly."
+                out=$(run_quilt refresh -p ab) ||
+                    fail "patch $npatch failed refresh: $out"
+            elif [ ! -t 0 ]; then
                 fail "patch $npatch does not apply: $out"
-            out=$(run_quilt refresh -p ab) ||
-            fail "patch $npatch failed refresh: $out"
+            else
+                error "Applying $npatch failed: $out"
+                refresh_shell
+                ret=$?
+                [ $ret -eq 0 ] || fail "refresh shell $npatch exited $ret"
+                out=$(run_quilt refresh -p ab) ||
+                    fail "patch $npatch failed refresh: $out"
+            fi
         done
         refreshed=$(git diff --name-only debian/patches/)
         quilt pop -a || fail "failed quilt pop -a"
