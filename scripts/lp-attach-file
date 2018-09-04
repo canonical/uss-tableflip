@@ -7,8 +7,20 @@ is fixed.  https://bugs.launchpad.net/bugs/1425575.
 
 import argparse
 import os
+import subprocess
 import sys
 from launchpadlib.launchpad import Launchpad
+
+
+def get_mime_type(path, required=True):
+    mtype = None
+    try:
+        mtype = subprocess.check_output(
+            ["file", "--brief", "--mime-type", path]).decode('utf-8').strip()
+    except (OSError, subprocess.CalledProcessError):
+        if required:
+            raise
+    return mtype
 
 
 def main():
@@ -24,7 +36,10 @@ def main():
     parser.add_argument('-n', '--name', action='store', default=None,
                         help='Provide a filename. Default is basename(file).')
     parser.add_argument('-t', '--type', action='store', default=None,
-                        help='Provide the content_type.', dest='content_type')
+                        help=('Provide the content_type. Default is to use '
+                              '"file --mime-type" if available.  Pass "none" '
+                              'for explicit None.'),
+                        dest='content_type')
     parser.add_argument('--dry-run', action='store_true', default=False,
                         help='only report what would be done')
     parser.add_argument('--patch', action='store_true', default=False,
@@ -49,6 +64,13 @@ def main():
     args.comment = args.comment_tmpl.format(filename=args.filename)
 
     service_root = 'staging' if args.staging else 'production'
+
+    if args.content_type in (None, "auto"):
+        # "auto" here means required use of 'file'
+        args.content_type = get_mime_type(
+            args.file, required=args.content_type == "auto")
+    elif args.content_type.lower() == "none":
+        args.content_type = None
 
     parms = ('comment', 'content_type', 'description', 'filename', 'is_patch')
     kwargs = {k: getattr(args, k) for k in parms if getattr(args, k)}
