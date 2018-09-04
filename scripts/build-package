@@ -74,7 +74,7 @@ get_genchanges_version() {
 
 main() {
     local short_opts="ho:v"
-    local long_opts="help,output:,ref:,verbose"
+    local long_opts="help,output:,offset:,ref:,verbose"
     local getopt_out=""
     getopt_out=$(getopt --name "${0##*/}" \
         --options "${short_opts}" --long "${long_opts}" -- "$@") &&
@@ -87,6 +87,7 @@ main() {
         cur="$1"; next="$2";
         case "$cur" in
             -h|--help) Usage ; exit 0;;
+               --offset) offset=$next; shift;;
             -o|--output) out_d=$next; shift;;
             -v|--verbose) VERBOSITY=$((${VERBOSITY}+1));;
                --ref) ref=$next; shift;;
