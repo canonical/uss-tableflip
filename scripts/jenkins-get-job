@@ -15,18 +15,17 @@ JENKINS_URL = "https://jenkins.ubuntu.com/server/"
 
 def main():
     parser = argparse.ArgumentParser()
-
     parser.add_argument(
         '-a', '--artifacts', action='store_true', default=False,
         help='Download artifacts for build also.')
-    parser.add_argument('-O', '--output-dir', type=str, default="./jenkins",
-                        help='Directory to write to')
-    parser.add_argument('--url', type=str, default=JENKINS_URL,
-                        help='the url for jenkins to query')
+    parser.add_argument(
+        '-O', '--output-dir', type=str, default="./jenkins",
+        help='Directory to write to')
+    parser.add_argument(
+        '--url', type=str, default=JENKINS_URL,
+        help='the url for jenkins to query')
     parser.add_argument('--verbose', '-v', action='count', default=0)
-
     parser.add_argument('jobs', nargs='+', default=[])
-
     args = parser.parse_args()
 
     server = Jenkins(args.url)
@@ -39,6 +38,7 @@ def main():
 
     for jobname in args.jobs:
         build_num = None
+        # if 'jobname' is name/number, then get that specific number.
         if "/" in jobname:
             jobname, build_num = jobname.split("/")
         job = server.get_job(jobname)
