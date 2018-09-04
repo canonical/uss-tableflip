@@ -376,7 +376,7 @@ EOF
 
 wait_for_boot() {
     call_in_env self "${FUNCNAME[0]}" "$@" && return "$_RET"
-    set -- "${_RET_CMD[@]}"
+    set -- ${_RET_CMD+"${_RET_CMD[@]}"}
 
     local short_opts="m:v"
     local long_opts="max-wait:,verbose"
