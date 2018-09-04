@@ -183,7 +183,7 @@ EOF
 
 run_container() {
     local short_opts="a:DG:hn:v"
-    local long_opts="artifacts:,copy-out:,destroy,git:,help,install:,name:,verbose"
+    local long_opts="artifacts:,as-root,copy-out:,destroy,git:,help,install:,name:,verbose"
     local getopt_out=""
     getopt_out=$(getopt --name "${FUNCNAME[0]}" \
         --options "${short_opts}" --long "${long_opts}" -- "$@") &&
@@ -192,11 +192,13 @@ run_container() {
 
     local cur="" next="" ret=""
     local name="" giturl="" install="" artifacts="artifacts/"
+    local user="ci-user"
     local -a copy_out=( ) cmd=( ) failures=( )
     while [ $# -ne 0 ]; do
         cur="${1:-}"; next="${2:-}";
         case "$cur" in
             -a|--artifacts) artifacts="${next%/}/";;
+               --as-root) user=root;;
                --copy-out) copy_out[${#copy_out[@]}]="$next";;
             -h|--help) "Usage_${FUNCNAME[0]}"; return 0;;
             -G|--git) giturl="$next"; shift;;
@@ -250,9 +252,11 @@ run_container() {
         }
     fi
 
-    local user="ci-user" dirty="1"
-    # shellcheck disable=SC2046
-    add_user $(vflag) "$cflag" "$user" || return
+    local dirty="1"
+    if [ "${user}" != "root" ]; then
+        # shellcheck disable=SC2046
+        add_user $(vflag) "$cflag" "$user" || return
+    fi
 
     local dir="" git_d=""
     if [ -d "$giturl" ]; then
