@@ -404,7 +404,16 @@ wait_for_boot() {
         check=is_done_systemd
     fi
     debug 2 "check is $check"
-    while ! $check $i; do
+    local ret=0
+    while :; do
+        $check $i
+        ret=$?
+        if [ $ret -eq 0 ]; then
+            break
+        elif [ $ret -eq 2 ]; then
+            debug 0 "boot marked failed after check number $i."
+            return 1
+        fi
         i=$((i+1));
         [ "$i" -ge "$wtime" ] &&
             { debug 0 "gave up waiting for boot after $wtime"; return 1; }
@@ -419,8 +428,18 @@ wait_for_boot() {
 }
 
 is_done_cloudinit() {
+    # is_done_*
+    #   return 0: on finished happy
+    #   return 1: not finished
+    #   return 2: finished but failed.
     _RET=""
-    [ -e "/run/cloud-init/result.json" ]
+    local resjson="/run/cloud-init/result.json"
+    [ -e "$resjson" ] || return 1
+    local python="python3"
+    command -v python3 >/dev/null || python=python
+    $python -c 'import json, sys;
+sys.exit(len(json.loads(open(sys.argv[1]).read())["v1"]["errors"]) != 0)' \
+        $resjson && return 0 || return 2
 }
 
 is_done_systemd() {
@@ -441,7 +460,7 @@ is_done_systemd() {
 is_done_other() {
     local out=""
     out=$(getent hosts ubuntu.com 2>&1)
-    return
+    [ $? -eq 0 ] && return 0 || return 1
 }
 
 
