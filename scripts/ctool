@@ -230,8 +230,9 @@ run_container() {
     if [ "${source#*:}" = "${source}" ]; then
         source="ubuntu-daily:${source}"
     fi
-    lxc launch "$source" "$name" || {
-        errorrc "failed lxc launch $source $name";
+    local out=""
+    out=$(lxc launch "$source" "$name" 2>&1) || {
+        errorrc "failed lxc launch $source $name: $out";
         return
     }
     CONTAINER="$name"
