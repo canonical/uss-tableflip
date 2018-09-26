@@ -194,6 +194,12 @@ main() {
         return;
     }
 
+    if [ -z "$DEBFULLNAME" -o -z "$DEBEMAIL" ]; then
+        error "Must set DEBFULLNAME and DEBEMAIL per"
+        error "  https://www.debian.org/doc/manuals/maint-guide/first.en.html"
+        fail
+    fi
+
     local cur_branch="" prev_pkg_ver pkg_name dist prev_dist t=""
     local prev_pkg_hash="" new_pkg_debian="" new_upstream_ver="" new_pkg_ver=""
     local sru_ver_suff="" upstream_hash=""
