@@ -7,9 +7,9 @@ CR='
 '
 error() { echo "$@" 1>&2; }
 debug() {
-	local level=${1}; shift;
-	[ "${level}" -gt "${VERBOSITY}" ] && return
-	error "${@}"
+    local level=${1}; shift;
+    [ "${level}" -gt "${VERBOSITY}" ] && return
+    error "${@}"
 }
 fail() {
     [ $# -eq 0 ] || error "$@";
@@ -215,9 +215,9 @@ main() {
         esac
     fi
 
-	TEMP_D=$(mktemp -d "${TMPDIR:-/tmp}/${0##*/}.XXXXXX") ||
-		fail "failed to make tempdir"
-	trap cleanup EXIT
+    TEMP_D=$(mktemp -d "${TMPDIR:-/tmp}/${0##*/}.XXXXXX") ||
+        fail "failed to make tempdir"
+    trap cleanup EXIT
 
     prev_pkg_ver=$(dpkg-parsechangelog --show-field Version) ||
         fail "failed reading package version"
