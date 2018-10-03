@@ -56,10 +56,10 @@ get_genchanges_version() {
     esac
     updates_version=$(
         rmadison --url=ubuntu --suite="${updates_suite}" $pkg_name |
-        awk '-F|' '{gsub(/ /, ""); print $2}')
+        awk '-F|' '$4 ~ /source/ {gsub(/ /, ""); print $2}')
     ga_version=$(
         rmadison --url=ubuntu --suite="${ga_suite}" $pkg_name |
-        awk '-F|' '{gsub(/ /, ""); print $2}')
+        awk '-F|' '$4 ~ /source/ {gsub(/ /, ""); print $2}')
     debug 1 "$pkg_name versions updates=${updates_version} ga=${ga_version}"
     if [ -n "$updates_version" ]; then
         _RET="-v${updates_version}"
