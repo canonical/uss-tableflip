@@ -237,7 +237,7 @@ main() {
     [ "${sru_ver_suff}" = "${prev_pkg_ver}" ] && sru_ver_suff=""
 
     local sru_bug_fillstr="SRU_BUG_NUMBER_HERE" sru_bug_string="" skip_bugs=""
-    [ "${bug_refs_in_clog}" = "true" ] && skip_bugs="--skip-bugs"
+    [ "${bug_refs_in_clog}" = "false" ] && skip_bugs="--skip-bugs"
     if [ -n "$sru_ver_suff" ]; then
         sru_bug_string="(LP: #$sru_bug_fillstr)"
         skip_bugs="--skip-bugs"
