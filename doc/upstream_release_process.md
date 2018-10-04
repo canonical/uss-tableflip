@@ -105,11 +105,11 @@ Please sign the email.
 Follow the Ubuntu release process doc [ubuntu-release-process](https://gist.github.com/smoser/6391b854e6a80475aac473bba4ef0310#file-ubuntu-release-process-md)
 
 ## Update COPR build cloud-init/el-testing repository with latest upstream release
- * /tools/run-centos --srpm 6 --keep
- * CENT_CONTAINER=`lxc list -c n | grep cent | awk '{print $2}'`a
- * SRPM_FILE=`lxc exec $CENT_CONTAINER ls /home/ci-test/cloud-init/*rpm`
- * lxc file pull $CENT_CONTAINER/home/ci-test/cloud-init/cloud-init\*src.rpm .
- * Login to https://copr.fedorainfracloud.org/coprs/g/cloud-init/el-testing/build
+ * Build srpm
+
+       $ ./tools/run-container --source-package --unittest --artifacts=./srpm/ centos/7
+
+ * Load [https://copr.fedorainfracloud.org/coprs/g/cloud-init/el-testing/builds/](el-testing project/builds).
  * Click New Build button -> Upload tab -> upload your src.rpm file
 
 
