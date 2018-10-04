@@ -166,6 +166,7 @@ run-container [options] source [cmd]
 
     options:
       -a | --artifacts DIR   copy artifacts to DIR (default=./artifacts)
+           --boot-wait TIME  number of seconds to wait for boot ($DEFAULT_WAIT_MAX)
            --copy-out  DIR   copy contents of DIR to artifacts dir.
       -G | --git url         clone url (use '.' to push current git dir)
                              url can be git_repo@commitish to checkout commitish
@@ -183,14 +184,14 @@ EOF
 
 run_container() {
     local short_opts="a:DG:hn:v"
-    local long_opts="artifacts:,as-root,copy-out:,destroy,git:,help,install:,name:,verbose"
+    local long_opts="artifacts:,as-root,boot-wait:,copy-out:,destroy,git:,help,install:,name:,verbose"
     local getopt_out=""
     getopt_out=$(getopt --name "${FUNCNAME[0]}" \
         --options "${short_opts}" --long "${long_opts}" -- "$@") &&
         eval set -- "${getopt_out}" ||
         { bad_Usage run_container; return; }
 
-    local cur="" next="" ret=""
+    local cur="" next="" ret="" wtime="${DEFAULT_WAIT_MAX}"
     local name="" giturl="" install="" artifacts="artifacts/"
     local user="ci-user"
     local -a copy_out=( ) cmd=( ) failures=( )
@@ -199,6 +200,7 @@ run_container() {
         case "$cur" in
             -a|--artifacts) artifacts="${next%/}/";;
                --as-root) user=root;;
+               --boot-wait) wtime="$next";;
                --copy-out) copy_out[${#copy_out[@]}]="$next";;
             -h|--help) "Usage_${FUNCNAME[0]}"; return 0;;
             -G|--git) giturl="$next"; shift;;
@@ -238,9 +240,9 @@ run_container() {
     CONTAINER="$name"
 
     local cflag="--container=$name"
-    debug 1 "Waiting for boot of container '$name'."
+    debug 1 "Waiting up to ${wtime}s for '$name' to boot."
     # shellcheck disable=SC2046
-    wait_for_boot $(vflag) "$cflag" || {
+    wait_for_boot $(vflag) "--max-wait=$wtime" "$cflag" || {
         errorrc "$name did not finish booting."
         return
     }
@@ -373,7 +375,7 @@ wait_for_boot [--container]
 Wait for the container to finish booting.
 
 options:
-  -m | --max-wait  MAX    wait up to MAX seconds before giving up.
+  -m | --max-wait  MAX    wait up to MAX seconds before giving up. [${DEFAULT_WAIT_MAX}]
   -v | --verbose          be more verbose
 EOF
 }
