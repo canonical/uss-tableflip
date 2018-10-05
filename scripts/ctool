@@ -601,12 +601,12 @@ call_in_env() {
     if [ -z "$container" -o "${cur_container}" = "$container" ]; then
         if [ -n "$user" -a "$user" != "${cur_user}" ]; then
             set -- sudo ${copyenv:+"${copyenv[@]}"} \
-                "--user=$user" --set-home -- "$@"
+                "-u" "$user" -H -- "$@"
         fi
     else
         if [ "$user" != "root" -a -n "$user" ]; then
             set -- sudo ${copyenv+"${copyenv[@]}"} \
-                "--user=$user" --set-home -- "$@"
+                "-u" "$user" -H -- "$@"
         fi
         if [ -n "$container" ]; then
             set -- lxc exec "$container" -- env \

@@ -443,7 +443,11 @@ main() {
     local tag=""
     tag=$(echo "ubuntu/$new_pkg_ver" | tr '~' '_')
     release_suffix=""
-    if [ -n "${sru_ver_suff}" ]; then
+    if [ -n "${sru_ver_suff}" ] &&
+        [ "${NUS_PROPOSED_IN_CHANGELOG:-0}" != "0" ]; then
+        # we do not add '-proposed' to the changelog file as
+        # doing so means that an upload of that to a PPA will be rejected.
+        # with a message like: Uploads aren't permitted to pocket: proposed
         release_suffix="-proposed"
     fi
     cat <<EOF

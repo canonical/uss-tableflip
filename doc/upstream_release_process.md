@@ -83,7 +83,7 @@ Note, we can do this step including the 'Update Release info' step with with 'lp
     $ lp-project-upload cloud-init 17.2 cloud-init-17.2.tar.gz 17.3 changelog-file releasenotes-file
     
     
-## Close bugs (fun)
+## Close bugs.
 Any bugs that were listed should be marked as 'fix-released' now.
 There is a tool in [uss-tableflip](https://github.com/CanonicalLtd/uss-tableflip) called lp-bugs-released that makes this sane.
 
