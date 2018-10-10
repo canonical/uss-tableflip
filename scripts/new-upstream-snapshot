@@ -164,6 +164,18 @@ EOF
     env_quilt env debian_chroot="refresh-fix" "${SHELL:-/bin/bash}"
 }
 
+find_existing_remote() {
+    local remotes="" cand=""
+    remotes=$(git remote) || {
+        error "failed running 'git remote'"
+        return 1
+    }
+    for cand in "$@"; do
+        echo "$remotes" | grep -q "^$cand$" && echo "$cand" && return
+    done
+    return 1
+}
+
 main() {
     local short_opts="h:v"
     local long_opts="help,bugs,update-patches-only,no-bugs,no-prompt,skip-branch-name-check,verbose"
@@ -203,7 +215,20 @@ main() {
     local cur_branch="" prev_pkg_ver pkg_name dist prev_dist t=""
     local prev_pkg_hash="" new_pkg_debian="" new_upstream_ver="" new_pkg_ver=""
     local sru_ver_suff="" upstream_hash=""
-    local from_ref="${1:-master}"
+    local from_ref="$1"
+
+    if [ -z "$from_ref" ]; then
+        remote=$(find_existing_remote upstream origin) || {
+            error "Failed to find remote named 'upstream' or 'origin'."
+            error "To avoid this, provide commitish."
+            return 1
+        }
+        debug 0 "updating remote $remote for default commitish $remote/master."
+        git fetch "$remote" ||
+            { error "failed 'git fetch $remote'"; return 1; }
+        from_ref="${remote}/master"
+    fi
+
     cur_branch=$(git rev-parse --abbrev-ref HEAD) ||
         fail "failed to get current branch"
 
