@@ -474,6 +474,8 @@ main() {
         # doing so means that an upload of that to a PPA will be rejected.
         # with a message like: Uploads aren't permitted to pocket: proposed
         release_suffix="-proposed"
+    else
+        prev_dist=${prev_dist%-proposed}
     fi
     cat <<EOF
 wrote new-upstream-changes.txt for $pkg_name version ${new_pkg_ver}.
