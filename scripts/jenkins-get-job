@@ -28,7 +28,7 @@ def main():
     parser.add_argument('jobs', nargs='+', default=[])
     args = parser.parse_args()
 
-    server = Jenkins(args.url)
+    server = Jenkins(args.url, timeout=60)
 
     level = (log.ERROR, log.INFO, log.DEBUG)[min(args.verbose, 2)]
     log.basicConfig(stream=sys.stderr, level=level)
