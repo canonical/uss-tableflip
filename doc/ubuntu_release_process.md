@@ -148,6 +148,22 @@ That will produce 1 or 2 commits on the branch with summary like:
 After doing that you can go to the recipe pages (see below) and click
 build-now.
 
+### Adding a quilt patch to debian/patches ###
+This is generally needed when we are disabling backported feature from tip
+in order to retain existing behavior on an older series.
+
+The procedure is as follows:
+
+ * quilt push -a                            # Apply existing patches in order
+ * quilt new <descriptive_patch_nam>.patch  # Create a new named debian/patch
+ * quilt edit <somefile_you_are_changing>   # For each changed file
+ * quilt refresh                            # Write the patch to debian/patches
+ * quilt header --dep3 -e                   # Edit the descriptive patch header 
+ * quilt pop -a
+ * git add debian/patches
+ * vi debian/changelog                      # Record the new debian patch file
+
+Then follow the steps [`dch --release` and beyond](#upstream-snapshot-process).
 
 ## Outside Uploads ##
 Any core-dev of ubuntu can upload to cloud-init in an SRU or development
