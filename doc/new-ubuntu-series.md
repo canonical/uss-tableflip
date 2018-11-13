@@ -26,10 +26,11 @@ and add the new release.
 ## Create a new stable release branch for cloud-init
 We maintain a branch for each ubuntu release.  The newly released branch *was* being built from `ubuntu/devel`, but now we want to create a `ubuntu/<release>` branch.
 
-    $ git clone -o upstream ssh://launchpad.net/cloud-init
+    $ git clone -o upstream ssh://git.launchpad.net/cloud-init
     $ cd cloud-init
-    $ git branch ubuntu/<release> ubuntu/devel
-    $ git push upstream ubuntu/<release>
+    $ PREVIOUS_RELEASE=`dpkg-parsechangelog --offset 0 --count=1 --show-field Distribution`
+    $ git checkout -b ubuntu/$PREVIOUS_RELEASE upstream/ubuntu/devel
+    $ git push upstream ubuntu/$PREVIOUS_RELEASE
 
 ## To add a new release for cloud-init build recipe
 cloud-init recipe is harder because we have packaging branches that differ
