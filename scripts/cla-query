@@ -7,7 +7,7 @@ import sys
 from argparse import ArgumentParser
 
 LP_INSTANCE = "production"
-CLA_GROUPS = ["~canonical-server"]
+CLA_GROUPS = ["~contributor-agreement-canonical", "~canonical-server"]
 
 
 def get_parser():
@@ -28,8 +28,7 @@ def main():
     cla_signed = set()
     cla_notsigned = []
     member_names = set()
-    projects = ['~contributor-agreement-canonical', '~canonical-server']
-    for project_name in projects:
+    for project_name in CLA_GROUPS:
        proj = lp.projects(project_name)
        member_names.update(set([m.name for m in proj.members]))
     if args.lpid in member_names:
