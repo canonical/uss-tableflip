@@ -1,0 +1,42 @@
+#!/usr/bin/python
+"""Lauchpad IDs to query to see if userid has signed CLA."""
+
+from launchpadlib.launchpad import Launchpad
+from os.path import basename
+import sys
+from argparse import ArgumentParser
+
+LP_INSTANCE = "production"
+CLA_GROUPS = ["~contributor-agreement-canonical", "~canonical-server"]
+
+
+def get_parser():
+    parser = ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "lpid", type=str,
+        help=__doc__)
+    return parser
+
+
+def main():
+
+    parser = get_parser()
+    args = parser.parse_args()
+    print('Logging into Launchpad')
+    lp = Launchpad.login_anonymously(
+        "cla-validator", LP_INSTANCE)
+    cla_signed = set()
+    cla_notsigned = []
+    member_names = set()
+    for project_name in CLA_GROUPS:
+       proj = lp.projects(project_name)
+       member_names.update(set([m.name for m in proj.members]))
+    if args.lpid in member_names:
+        print("%s signed the CLA" % args.lpid)
+        sys.exit(0)
+    print("%s has not signed the CLA" % args.lpid)
+    sys.exit(1)
+
+
+if __name__ == "__main__":
+    main()
