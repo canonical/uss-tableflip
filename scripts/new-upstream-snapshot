@@ -280,6 +280,8 @@ main() {
     case "$new_upstream_ver" in
         *-[0-9]*-g[a-f0-9]*) new_msg="New upstream snapshot.";;
         [0-9][0-9].[0-9]) new_msg="New upstream release.";;
+        [0-9].[0-9]|[0-9].[0-9][0-9])
+            new_msg="New upstream release.";;
         *) fail "unrecognized upstream version '$new_upstream_ver'";;
     esac
 
