@@ -179,6 +179,7 @@ main() {
         set -- "$@" ${genchanges_v}
     fi
     ( cd "$wtd" && rm -Rf .git ) || fail "failed removing .git from work dir."
+    debug 0 "building with:" "$@"
     ( cd "$wtd" && debuild "$@" ) || fail "FAILED: debuild $*"
 
     ( for f in "$TEMP_D/"*; do echo "$f"; done )
