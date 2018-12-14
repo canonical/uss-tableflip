@@ -41,6 +41,8 @@ get_genchanges_version() {
     devel=$(distro-info --devel)
     [ "$suite" = "$devel" ] &&
         { debug 1 "-v not relevant for devel suite ($suite)"; return 0; }
+    [ "$(echo $suite | tr '[a-z]' '[A-Z]')" = "UNRELEASED" ] &&
+        { debug 1 "-v not relevant for unreleased"; return 0; }
     if ! command -v rmadison >/dev/null 2>&1; then
         debug 1 "rmadison not available."
         return 0
