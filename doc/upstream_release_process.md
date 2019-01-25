@@ -21,7 +21,7 @@ The commit content should consist of
  3. updating ChangeLog file in source.
     This is most easily done done by using [log2dch](https://gist.github.com/smoser/813c84bc7a79efc75d3f7fc2f383f12f).
     
-        git log 17.1..17.2 | log2dch | sed 's/^   //g'
+        git log 17.1..HEAD | log2dch | sed 's/^   //g'
         
  4. commit.  The git commit message should look like others:
 
@@ -31,7 +31,7 @@ The commit content should consist of
         
  5. Tag.  At this point running 'tox' will fail, complaining that your version does not match what git-describe does.  To fix that you have to tag.
 
-        git tag --annotate --sign
+        git tag --annotate --sign YY.N
 
  6. push the branch up for review and create a merge proposal.  We will use that MP for some documentation on things that have been tested.
     Example merge proposals: [17.2](https://code.launchpad.net/~smoser/cloud-init/+git/cloud-init/+merge/335233), [18.1](https://code.launchpad.net/~smoser/cloud-init/+git/cloud-init/+merge/338588)
@@ -109,7 +109,7 @@ Follow the Ubuntu release process doc [ubuntu-release-process](https://gist.gith
 
        $ ./tools/run-container --source-package --unittest --artifacts=./srpm/ centos/7
 
- * Load [https://copr.fedorainfracloud.org/coprs/g/cloud-init/el-testing/builds/](el-testing project/builds).
+ * Load [el-testing project/builds](https://copr.fedorainfracloud.org/coprs/g/cloud-init/el-testing/builds/)
  * Click New Build button -> Upload tab -> upload your src.rpm file
 
 
