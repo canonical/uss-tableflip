@@ -41,6 +41,8 @@ get_genchanges_version() {
     devel=$(distro-info --devel)
     [ "$suite" = "$devel" ] &&
         { debug 1 "-v not relevant for devel suite ($suite)"; return 0; }
+    [ "$(echo $suite | tr '[a-z]' '[A-Z]')" = "UNRELEASED" ] &&
+        { debug 1 "-v not relevant for unreleased"; return 0; }
     if ! command -v rmadison >/dev/null 2>&1; then
         debug 1 "rmadison not available."
         return 0
@@ -179,6 +181,7 @@ main() {
         set -- "$@" ${genchanges_v}
     fi
     ( cd "$wtd" && rm -Rf .git ) || fail "failed removing .git from work dir."
+    debug 0 "building with:" "$@"
     ( cd "$wtd" && debuild "$@" ) || fail "FAILED: debuild $*"
 
     ( for f in "$TEMP_D/"*; do echo "$f"; done )

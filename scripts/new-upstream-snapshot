@@ -164,6 +164,18 @@ EOF
     env_quilt env debian_chroot="refresh-fix" "${SHELL:-/bin/bash}"
 }
 
+merge_shell() {
+    cat 1>&2 <<EOF
+Dropping you into a shell.
+'git status' can help you.  Once you have resolved the differences
+then run: 'git commit'.
+
+After git commit, type 'exit 0'
+To abort, 'exit 1'
+EOF
+    debian_chroot="merge-fix" "${SHELL:-/bin/bash}"
+}
+
 find_existing_remote() {
     local remotes="" cand=""
     remotes=$(git remote) || {
@@ -174,6 +186,20 @@ find_existing_remote() {
         echo "$remotes" | grep -q "^$cand$" && echo "$cand" && return
     done
     return 1
+}
+
+is_merge_commit() {
+    local commitish="$1" out="" num="" numlines=""
+    out=$(git show "--format=%P" "$commitish") ||
+        { error "failed git show --format=%P $commitish"; return 2; }
+    numlines=$(echo "$out" | wc -l)
+    [ "$numlines" -eq 1 ] || {
+        error "output of git show --format=%P had multiple lines [$numlines]."
+        return 2
+    }
+    num=$(echo "$out" | wc -w)
+    [ $num -eq 0 ] && { error "$commitish had zero parents"; return 1; }
+    [ $num -gt 1 ]
 }
 
 main() {
@@ -280,6 +306,8 @@ main() {
     case "$new_upstream_ver" in
         *-[0-9]*-g[a-f0-9]*) new_msg="New upstream snapshot.";;
         [0-9][0-9].[0-9]) new_msg="New upstream release.";;
+        [0-9].[0-9]|[0-9].[0-9][0-9])
+            new_msg="New upstream release.";;
         *) fail "unrecognized upstream version '$new_upstream_ver'";;
     esac
 
@@ -351,14 +379,27 @@ main() {
         fi
     fi
 
-    local pre_merge=""
+    local pre_merge="" ret=""
     pre_merge="$(git rev-parse HEAD)"
     debug 1 "After patches dropped, at $pre_merge"
 
-    git merge "${from_ref}" -m "merge from $from_ref at $new_upstream_ver" ||
-        fail "failed: git merge ${from_ref} -m 'merge from $from_ref ..'"
+    out=$(git merge "${from_ref}" \
+        -m "merge from $from_ref at $new_upstream_ver" 2>&1)
+    ret=$?
+    if [ $ret -ne 0 ]; then
+        if [ ! -t 0 ]; then
+            fail "failed[$ret] git merge ${from_ref}: $out"
+        fi
+        error "git merge (${from_ref}) failed: $out"
+        merge_shell
+        ret=$?
+        [ $ret -eq 0 ] || fail "merge shell exited $ret"
+        if ! is_merge_commit HEAD; then
+            fail "HEAD does not seem to be merge commit."
+        fi
+    fi
 
-    local refreshed="" out="" npatch="" ret=""
+    local refreshed="" out="" npatch=""
     rm -Rf .pc
     refreshed=""
     if [ -f "$dpseries" ]; then

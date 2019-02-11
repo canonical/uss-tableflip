@@ -115,4 +115,4 @@ Follow the Ubuntu release process doc [ubuntu-release-process](https://gist.gith
 
 # Opening next release
 
-  * Go to https://launchpad.net/cloud-init/trunk . Create a milestone, pick a target date.
+  * Go to https://launchpad.net/cloud-init/trunk . Create a milestone, enter the next release number (YY.1) and pick a target date.

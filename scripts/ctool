@@ -570,7 +570,8 @@ call_in_env() {
     done
     args=( ${args+"${args[@]}"} "$@" )
 
-    [ "${args[0]}" = "self" ] && { self=true; args=( "${args[@]:1}" ); }
+    [ "${#args[@]}" -ne 0 ] && [ "${args[0]}" = "self" ] &&
+        { self=true; args=( "${args[@]:1}" ); }
 
     cur_user="$(id -un)"
     case "${container}:${user}" in
