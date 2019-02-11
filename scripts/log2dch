@@ -107,9 +107,12 @@ print_hackmd() {
     done
     bugmd=${bugmd%,}
     t=${commit#????????}
-    buf="- ${bugmd:+${bugmd} }${subject}"
+    buf="${bugmd:+${bugmd} }${subject}"
     buf="${buf} \[[${commit%$t}]($url${commit%$t})\]"
-    echo "$buf"
+    if [[ $buf == 'tests:'* ]]; then
+	buf="~~NOTEST ${buf}~~"
+    fi
+    echo "- $buf"
 }
 
 print_trello() {
