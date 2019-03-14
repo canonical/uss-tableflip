@@ -42,7 +42,7 @@ print_commit() {
     aname=${author% <*}
     case "$aname" in
         # core team members do not need credit in changelog.
-        Scott\ Moser|Chad\ Smith|Ryan\ Harper) aname="";;
+        Daniel\ Watkins|Chad\ Smith|Ryan\ Harper) aname="";;
     esac
     abugs="${aname:+ [${aname}]}${bugs:+ (LP: ${bugs})}"
     if [ $((${#subject}+${#abugs})) -le $(($ll-${#indent})) ]; then
