@@ -108,6 +108,8 @@ apt_install() {
 
 apt_get() {
     local ret=""
+    [ "$(id -u)" = "0" ] ||
+        { error "Must be root for apt-get"; return 1; }
     if [ "$1" != "update" ] && ! $_APT_UPDATED; then
         debug 1 "updating apt"
         apt_get update >/dev/null || {
@@ -119,7 +121,7 @@ apt_get() {
     fi
     local emd=""
     command -v eatmydata >/dev/null 2>&1 && emd="eatmydata"
-    set -- sudo DEBIAN_FRONTEND=noninteractive $emd \
+    set -- env DEBIAN_FRONTEND=noninteractive $emd \
         apt-get --quiet --no-install-recommends --assume-yes "$@"
     debug 1 "Installing depends: $*"
     "$@" </dev/null
