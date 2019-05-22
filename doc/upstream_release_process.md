@@ -89,7 +89,7 @@ There is a tool in [uss-tableflip](https://github.com/CanonicalLtd/uss-tableflip
 
     # git log <last-release>..<this-release>
     $ git log 17.1..17.2 | grep "^[ ]*LP:" | sort -u
-    $ ./lp-bugs-released <version> <bug list here>
+    $ ./lp-bugs-released <project> <version> <bug list here>
  
 Basically copy the Release Notes and the Changelog into an email to
 Cloud-init Mailing List <cloud-init@lists.launchpad.net>
