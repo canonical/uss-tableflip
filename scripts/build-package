@@ -176,7 +176,7 @@ main() {
     genchanges_v="$_RET"
 
     if [ $# -eq 0 ]; then
-        set -- -d -S ${genchanges_v}
+        set -- -d -S -nc ${genchanges_v}
     elif [ -n "${genchanges_v}" ]; then
         set -- "$@" ${genchanges_v}
     fi
