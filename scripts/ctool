@@ -520,8 +520,7 @@ add_user() {
     local home="/home/$user"
     debug 1 "adding user $user"
     useradd "$user" "--shell=/bin/bash" --create-home "--home-dir=$home" || {
-        errorrc "${container:+[${container}] }Failed to add user '$user'" \
-            "in '$name'";
+        errorrc "${_container:+[${_container}] }Failed to add user '$user'"
         return
     }
     local sline="$user ALL=(ALL) NOPASSWD:ALL"
