@@ -136,7 +136,7 @@ print_dch() {
     #( for i in ${bugs}; do echo ${i%,}; done); return
     aname=${author% <*}
     case "$aname" in
-        Chad\ Smith|Ryan\ Harper|Scott\ Moser) aname="";;
+        Chad\ Smith|Ryan\ Harper|Scott\ Moser|Daniel\ Watkins) aname="";;
     esac
     abugs="${aname:+ [${aname}]}${bugs:+ (LP: ${bugs})}"
     if [ $((${#subject}+${#abugs})) -le $((ll-${#indent})) ]; then
