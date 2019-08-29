@@ -105,6 +105,10 @@ I then will sbuild the binary and then dput the result.
     $ sbuild --dist=xenial --arch=amd64  --arch-all ../out/cloud-init_18.2-4-g05926e48
     $ dput ../out/cloud-init_18.2-4-g05926e48-0ubuntu1~16.04.1.dsc
 
+For SRUs don't forget to dput into the [cloud-init proposed ppa](https://launchpad.net/~cloud-init-dev/+archive/ubuntu/proposed)
+
+    $ dput ppa:cloud-init-dev/proposed ../out/cloud-init_18.2-4-g05926e48-0ubuntu1~16.04.1.dsc
+
 Last, we need to push our tag above.
 
     $ git push upstream HEAD ubuntu/18.2-4-g05926e48-0ubuntu1_16.04.1
