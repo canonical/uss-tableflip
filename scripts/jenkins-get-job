@@ -11,6 +11,7 @@ import urllib.request
 from jenkinsapi.jenkins import Jenkins
 
 JENKINS_URL = "https://jenkins.ubuntu.com/server/"
+KNOWN_ISSUE_PREFIX = "Known issue:"
 
 
 def main():
@@ -21,6 +22,9 @@ def main():
     parser.add_argument(
         '-O', '--output-dir', type=str, default="./jenkins",
         help='Directory to write to')
+    parser.add_argument(
+        '-s', '--success', action='store_true', default=False,
+        help='Whether to return only the latest successful/good-build')
     parser.add_argument(
         '--url', type=str, default=JENKINS_URL,
         help='the url for jenkins to query')
@@ -45,8 +49,15 @@ def main():
         if build_num:
             build = job.get_build(int(build_num))
         else:
-            build = job.get_last_build()
-
+            if args.success:
+                build = job.get_last_good_build()
+            else:
+                build = job.get_last_build()
+            descr = build.get_description()
+            while descr and descr.startswith(KNOWN_ISSUE_PREFIX):
+                log.info("Skipping build #%d: %s", build.buildno, descr)
+                build = job.get_build(build.buildno - 1)
+                descr = build.get_description()
         status = build.get_status()
         log.info("%s/%s [%s]", job, build.buildno, status)
         build_d = os.path.sep.join(
