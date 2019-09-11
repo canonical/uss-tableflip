@@ -235,7 +235,7 @@ run_container() {
         source="ubuntu-daily:${source}"
     fi
     local out=""
-    out=$(lxc launch "$source" "$name" 2>&1) || {
+    out=$(lxc launch "$source" "$name" 2>&1 </dev/null) || {
         errorrc "failed lxc launch $source $name: $out";
         return
     }
