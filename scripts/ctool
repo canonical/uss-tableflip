@@ -975,6 +975,7 @@ delete_container() {
             debug 1 "Successfully deleted container after $x attempt(s)."
             return $rc
         fi
+        sleep 1
     done
     debug 1 "Failed deleted container after $x attempts."
     return $rc
