@@ -969,7 +969,7 @@ delete_container() {
     for x in 1 2 3 4 5; do
         # this may fail on ZFS backed systems; let's retry a few
         # times before reporting error
-        lxc delete --force "$1" 2>/dev/null
+        lxc delete --force "$1"
         rc=$?
         if [ "$rc" = "0" ]; then
             debug 1 "Successfully deleted container after $x attempt(s)."
