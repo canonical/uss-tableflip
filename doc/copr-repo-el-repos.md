@@ -61,8 +61,7 @@ The source rpm (SRPM) is located at
 The SRPM is used for uploading new release of the package in the COPR repo.
 
 
-
-###Handling COPR el-stable Updates
+### Handling COPR el-stable Updates
 
 When uploading new source rpms (SRPMS) to th COPR ``el-stable`` repository,
 please be aware that the **major version** of the src.rpm matters as it
@@ -84,7 +83,7 @@ releases.  Updating the ``el-stable`` repository flow is as follows:
  * Click "Build"
 
 
-###Testing COPR el-stable Updates
+### Testing COPR el-stable Updates
 
 After uploading and building a new el-stable source rpm, to test the
 repositores, for each release do
@@ -105,5 +104,3 @@ repositores, for each release do
     > EOF
     # yum install cloud-init-el-release
     # ls -al /etc/yum.repos.d/cloud-init-el*.repo
-
-
