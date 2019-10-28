@@ -25,6 +25,8 @@ point to the cloud-init COPR repositories where these files are hosted.  This
 package abstraction allows for migrating respositories to some other location
 in the future if needed.
 
+The ``cloud-init`` package is cloud-init source and runtime.
+
 
 ### cloud-init-el-release SOURCE
 
@@ -90,7 +92,7 @@ repositores, for each release do
 
     $ lxc launch images:centos/7/amd64 cent7-el-repo-test
     $ lxc exec cent7-el-repo-test bash
-    # cat > /etc/yum.repos.d/ci-bootstrap.repo << EOF 
+    # cat > /etc/yum.repos.d/ci-bootstrap.repo << EOF
     > [copr:copr.fedorainfracloud.org:group_cloud-init:el-stable]
     > name=Copr repo for el-stable owned by @cloud-init
     > baseurl=https://copr-be.cloud.fedoraproject.org/results/@cloud-init/el-stable/epel-7-\$basearch/
@@ -103,4 +105,7 @@ repositores, for each release do
     > enabled_metadata=1
     > EOF
     # yum install cloud-init-el-release
-    # ls -al /etc/yum.repos.d/cloud-init-el*.repo
+    # ls -al /etc/yum.repos.d/cloud-init-el*
+    # ls -al /etc/yum.repos.d/cloud-init-el-*
+    -rw-r--r-- 1 root root 356 Oct 28 19:29 /etc/yum.repos.d/cloud-init-el-stable.repo
+    -rw-r--r-- 1 root root 360 Oct 28 19:29 /etc/yum.repos.d/cloud-init-el-testing.repo
