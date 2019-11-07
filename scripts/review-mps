@@ -447,7 +447,7 @@ def main():
                 mp_comment +=  LP_COMMIT_URL
             push_cmd = [
                 'git', 'push', upstream_remote,
-                'publish_target:{0}'.format(upstream_branch), '--force'] # CHAD drop force
+                'publish_target:{0}'.format(upstream_branch)]
             subp(push_cmd, skip=bool('publish' in skips))
             commitish = subp(['git', 'log', '-n', '1', '--pretty=%H'])
             bug_comment = bug_comment.format(
