@@ -55,15 +55,16 @@ BUG_MESSAGE_UPSTREAM_COMMIT_TMPL = '''
 This bug is fixed with commit {commitish} to {project} on branch {branch}.
 
 To view that commit see the following URL:
-https://git.launchpad.net/{project}/commit/?id={commitish}
 '''
 
 MP_MESSAGE_UPSTREAM_COMMIT_TMPL = '''
 This merge has landed in commit {commitish} to {project} branch {branch}.
 
 To view that commit see the following URL:
-https://git.launchpad.net/{project}/commit/?id={commitish}
 '''
+
+LP_COMMIT_URL='https://git.launchpad.net/{project}/commit/?id={commitish}'
+GH_COMMIT_URL='https://github.com/canonical/cloud-init/commit/{commitish}'
 
 
 COMMIT_MESSAGE_LINTS_TMPL = '''
@@ -426,17 +427,34 @@ def main():
                 tox_output = subp(['tox'])
                 # Print redacted tox summary
                 log('\n'.join(tox_output.splitlines()[-8:]))
+            bug_comment = BUG_MESSAGE_UPSTREAM_COMMIT_TMPL
+            mp_comment = MP_MESSAGE_UPSTREAM_COMMIT_TMPL
             if args.pushremote:  # Add remote push target
-                upstream_remote = args.pushremote
+                if 'github' in args.pushremote:
+                    remotes = subp(['git', 'remote'])
+                    upstream_remote = 'pushremote'
+                    if upstream_remote in remotes:
+                        subp(['git', 'remote', 'remove', upstream_remote])
+                    subp(['git', 'remote', 'add', upstream_remote,
+                          args.pushremote])
+                    mp_comment += GH_COMMIT_URL
+                    bug_comment += GH_COMMIT_URL
+                else:
+                    mp_comment += LP_COMMIT_URL
+                    bug_comment += LP_COMMIT_URL
+                    upstream_remote = args.pushremote
+            else:
+                mp_comment +=  LP_COMMIT_URL
             push_cmd = [
                 'git', 'push', upstream_remote,
-                'publish_target:{0}'.format(upstream_branch)]
+                'publish_target:{0}'.format(upstream_branch), '--force'] # CHAD drop force
             subp(push_cmd, skip=bool('publish' in skips))
             commitish = subp(['git', 'log', '-n', '1', '--pretty=%H'])
-            bug_comment = BUG_MESSAGE_UPSTREAM_COMMIT_TMPL.format(
+            bug_comment = bug_comment.format(
                 commitish=commitish.strip()[:8], project=args.project_name,
                 branch=upstream_branch)
-            mp_comment = MP_MESSAGE_UPSTREAM_COMMIT_TMPL.format(
+            
+            mp_comment = mp_comment.format(
                 commitish=commitish.strip()[:8], project=args.project_name,
                 branch=upstream_branch)
 
