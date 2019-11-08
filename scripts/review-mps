@@ -97,6 +97,10 @@ def get_parser():
         help=('Whether to merge the matching branches into --upstream-branch.'
               ' Default: False'))
     parser.add_argument(
+        '--merge-url', required=False, dest='merge_url',
+        help=('Optional URL of the specific merge request to merge. If'
+              ' unspecified, you can select from a list.'))
+    parser.add_argument(
         '--dryrun', required=False, default=False, action='store_true',
         help=('Run commands and review operation in dryrun mode, '
               'making not changes.'))
@@ -377,7 +381,7 @@ def main():
     upstream_remote, upstream_branch = args.upstream.split('/', 1)
     source_mps = [
         mp for mp in lp_project.getMergeProposals(status=args.status)
-        if upstream_branch in mp.target_git_path]
+        if upstream_branch in mp.target_git_path and any([args.merge_url is None, mp.web_link == args.merge_url])]
     exit_code = 0
     if not source_mps:
         log('No merge proposals in {0} status targeting {1} branch.'.format(
@@ -401,7 +405,7 @@ def main():
     log('Cloned publishing content into: {_dir}'.format(_dir=repo_dir))
     create_publish_branch(args.upstream, 'publish_target')
 
-    if not args.all:
+    if not args.all and not args.merge_url:
         source_mps = [prompt_source_mp(source_mps)]
     # DRYRUN is an alias for no-remote operations on Launchpad.
     skips = set(args.skip)
