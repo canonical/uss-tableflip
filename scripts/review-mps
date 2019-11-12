@@ -47,7 +47,9 @@ GIT_MAX_WIDTH = 74
 RE_MERGE_URL_TMPL = (r'https://code.launchpad.net/~(?P<lpuser>[^/]+)/'
                      r'{project}/\+git/{project}/\+merge/\d+')
 RE_LP_BUG_IDS = 'LP:(,? #\d+)+\s*$'
-GIT_REMOTE_PATH_TMPL = 'git+ssh://{lp_user}@git.launchpad.net/{project}'
+GIT_REMOTE_PATH_TMPL = 'git+ssh://{user}@git.launchpad.net/{project}'
+GITHUB_REMOTE_PATH_TMPL = 'git@github.com:{user}/{project}.git'
+
 
 
 # Comment templates
@@ -260,7 +262,7 @@ def git_remotes(upstream_remote, project):
     '''
     remote_names = subp(['git', 'remote'])
     out = subp(['git', 'remote', 'get-url', upstream_remote])
-    git_prefix = out.strip().replace(project, '')
+    git_prefix = out.strip().replace(project, '').replace('.git', '')
     return remote_names, git_prefix
 
 
@@ -274,17 +276,21 @@ def create_publish_branch(upstream, publish_branch):
     subp(['git', 'checkout', upstream, '-b', publish_branch])
 
 
-def fetch_source_remote(project, source_mp, source_path, upstream_branch_path):
+def fetch_source_remote(
+        git_user, project, source_mp, source_path, upstream_branch_path):
     '''Create and fetch get source remote.'''
     source_remote = 'publish_source'
     upstream_remote, _ = upstream_branch_path.split('/', 1)
-    lp_user = re.match(RE_MERGE_URL_TMPL.format(project=project),
-                       source_mp.web_link).group('lpuser')
+    branch_user = re.match(RE_MERGE_URL_TMPL.format(project=project),
+                           source_mp.web_link).group('lpuser')
     remotes, git_prefix = git_remotes(upstream_remote, project)
     if source_remote in remotes:
         subp(['git', 'remote', 'remove', source_remote])
-    subp(['git', 'remote', 'add', source_remote,
-          '{0}~{1}/{2}'.format(git_prefix, lp_user, project)])
+
+    user_project = '~{0}/{1}'.format(branch_user, project)
+    lp_git_remote = GIT_REMOTE_PATH_TMPL.format(
+        user=git_user, project=user_project)
+    subp(['git', 'remote', 'add', source_remote, lp_git_remote])
     subp(['git', 'fetch', source_remote])
 
 
@@ -393,8 +399,8 @@ def main():
         repo_dir = 'publishing-{project}'.format(project=args.project_name)
     if not os.path.exists(repo_dir):
         subp(['git', 'clone',
-              GIT_REMOTE_PATH_TMPL.format(
-                  lp_user=args.git_user, project=args.project_name),
+              GITHUB_REMOTE_PATH_TMPL.format(
+                  user='canonical', project=args.project_name),
               repo_dir])
         os.chdir(repo_dir)
     else:
@@ -415,7 +421,8 @@ def main():
     for source_mp in source_mps:
         source_path = source_mp.source_git_path.replace('refs/heads', '')
         fetch_source_remote(
-            args.project_name, source_mp, source_path, args.upstream)
+            args.git_user, args.project_name, source_mp, source_path,
+            args.upstream)
         try:
             commit_msg = scrub_commit_msg(source_mp, source_path)
         except ValueError as e:
