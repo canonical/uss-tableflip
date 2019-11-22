@@ -486,6 +486,7 @@ Add the user 'user'.  Gives the user passwordless sudo also.
 
 options:
        --import-id ID       run ssh-import-id ID for the user.
+       --no-sudo            do not provide the user with passwordless sudo.
 EOF
 }
 
@@ -494,19 +495,20 @@ add_user() {
     set -- "${_RET_CMD[@]}"
 
     local short_opts="hv"
-    local long_opts="help,import-ids:,verbose"
+    local long_opts="help,import-ids:,no-sudo,verbose"
     local getopt_out=""
     getopt_out=$(getopt --name "${FUNCNAME[0]}" \
         --options "${short_opts}" --long "${long_opts}" -- "$@") &&
         eval set -- "${getopt_out}" ||
         { bad_Usage add_user; return; }
 
-    local cur="" next="" user=""
+    local cur="" next="" user="" add_sudo=true
     local -a import_ids=( )
     while [ $# -ne 0 ]; do
         cur="${1:-}"; next="${2:-}";
         case "$cur" in
             -h|--help) "Usage_${FUNCNAME[0]}"; return 0;;
+               --no-sudo) add_sudo=false;;
                --import-ids) import_ids[${#import_ids[@]}]="$next"; shift;;
             -v|--verbose) VERBOSITY=$((VERBOSITY+1));;
             --) shift; break;;
@@ -523,10 +525,11 @@ add_user() {
         errorrc "${_container:+[${_container}] }Failed to add user '$user'"
         return
     }
-    local sline="$user ALL=(ALL) NOPASSWD:ALL"
-    ( umask 226 && echo "$sline" > "/etc/sudoers.d/$user-user" ) ||
-        { errorrc "Failed to add user to sudoers.d"; return; }
-
+    if [ "$add_sudo" = "true" ]; then
+        local sline="$user ALL=(ALL) NOPASSWD:ALL"
+        ( umask 226 && echo "$sline" > "/etc/sudoers.d/$user-user" ) ||
+            { errorrc "Failed to add user to sudoers.d"; return; }
+    fi
     if [ "${#import_ids[@]}" != "0" ]; then
         call_in_env --user="$user" ssh-import-id "${import_ids[@]}" ||
             { errorrc "Failed to import-id for '$user'"; return; }
