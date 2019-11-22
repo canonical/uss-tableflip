@@ -688,7 +688,8 @@ parse_giturl() {
         lp:*@*|*://*@*)
             repo="${giturl%@*}"
             while [ "${repo%/}" != "${repo}" ]; do repo=${repo%/}; done
-            target=${repo##*/}
+            target=${repo#*:}
+            target=${target##*/}
             commitish=${giturl##*@};;
         *)
             repo="$giturl"
