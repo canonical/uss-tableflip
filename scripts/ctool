@@ -27,7 +27,7 @@ Usage: ${0##*/} [global options] mode [options]
   subcommands:
    run-container                [--destroy] [--name=] source [command]
    wait-for-boot [--container=]
-   execute       [--container=] [--dir=] [--user=] command
+   exec|execute  [--container=] [--dir=] [--user=] [command]
    add-user      [--container=] user
 
    git-export    [--dirty]
@@ -983,6 +983,7 @@ case "${1:-}" in
     install-deps|run-container|wait-for-boot|add-user|\
     git-export|git-import|git-clone|git-push-clone|execute)
         _n="${1//-/_}"; shift; "$_n" "$@";;
+    exec) shift; execute "$@";;
     *) bad_Usage main; exit;;
 esac
 
