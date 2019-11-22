@@ -472,9 +472,10 @@ is_done_other() {
 
 
 execute() {
-    call_in_env "$@" && return "$_RET"
+    call_in_env --def-cmd="${SHELL:-/bin/sh}" "$@" && return "$_RET"
     set -- "${_RET_CMD[@]}"
     local dir="${_RET_DIR}"
+    debug 1 "[$USER${container:+@${container}}:${dir:-$PWD}]: running $*"
     ( set -e; cd ~; cd "${dir:-.}"; "$@" )
 }
 
@@ -549,7 +550,7 @@ call_in_env() {
     #   _RET_CMD      : an array of the command with --container/--dir flags removed.
     #   _RET          : if rc was 0, this is the return value of the command executed.
     local cur_user="" cur_container="${_container:-}" self="false"
-    local container="" user="" dir="" need_stdin=false
+    local container="" user="" dir="" need_stdin=false defcmd=""
     local -a args=( )
     _RET_CMD=( )
     _RET="1"
@@ -562,6 +563,7 @@ call_in_env() {
             -u|--user) user="$next"; shift;;
             --user=*) user="${cur#*=}";;
             -d|--dir) dir="$next"; shift;;
+            --def-cmd=*) defcmd="${cur#*=}";;
             --dir=*) dir=${cur#*=};;
             --need-stdin) need_stdin=true;;
             --) shift; break;;
@@ -573,6 +575,8 @@ call_in_env() {
 
     [ "${#args[@]}" -ne 0 ] && [ "${args[0]}" = "self" ] &&
         { self=true; args=( "${args[@]:1}" ); }
+
+    [ "${#args[@]}" -eq 0 ] && [ -n "$defcmd" ] && args=( "$defcmd" )
 
     cur_user="$(id -un)"
     case "${container}:${user}" in
@@ -617,7 +621,7 @@ call_in_env() {
         fi
     fi
 
-    local qcmd="$*"
+    local qcmd="$* ${args[*]}"
     command -v shell-quote >/dev/null 2>&1 &&
         qcmd=$(shell-quote "$@" "${args[@]}")
 
