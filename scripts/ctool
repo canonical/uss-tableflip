@@ -491,7 +491,7 @@ EOF
 }
 
 add_user() {
-    call_in_env self "${FUNCNAME[0]}" "$@" && return "$_RET"
+    call_in_env self "${FUNCNAME[0]}" --user=root "$@" && return "$_RET"
     set -- "${_RET_CMD[@]}"
 
     local short_opts="hv"
