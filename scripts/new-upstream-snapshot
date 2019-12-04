@@ -36,60 +36,6 @@ options:
 EOF
 }
 
-print_commit() {
-    local subject="$1" author="$2" bugs="$3" aname="" buf="" abugs=""
-    local indent="    - " indent2="      " ll=79
-    aname=${author% <*}
-    case "$aname" in
-        # core team members do not need credit in changelog.
-        Daniel\ Watkins|Chad\ Smith|Ryan\ Harper) aname="";;
-    esac
-    abugs="${aname:+ [${aname}]}${bugs:+ (LP: ${bugs})}"
-    if [ $((${#subject}+${#abugs})) -le $(($ll-${#indent})) ]; then
-        echo "${indent}${subject}${abugs}"
-    elif [ ${#subject} -ge $(($ll-${#indent})) ]; then
-        echo "${subject}${abugs}" |
-            fmt --width=$(($ll-${#indent})) |
-            sed -e "1s/^/${indent}/; 1n;" \
-                -e 's/^[ ]*//' \
-                -e '/^[ ]*$/d' -e "s/^/$indent2/" -e 's/[ ]\+$//'
-
-    else
-        ( echo "${subject}"; echo "${abugs}" ) |
-            fmt --width=$(($ll-${#indent})) |
-            sed -e "1s/^/${indent}/; 1n;" \
-                -e 's/^[ ]*//' \
-                -e '/^[ ]*$/d' -e "s/^/$indent2/" -e 's/[ ]\+$//'
-    fi
-}
-
-git_log_to_dch() {
-    local line="" commit="" lcommit="" bugs=""
-    local skip_bugs=false
-    [ "$1" = "--skip-bugs" ] && skip_bugs=true && shift
-    while :; do
-        read line || break
-        case "$line" in
-            commit\ *)
-                $skip_bugs && bugs=""
-                if [ -n "$commit" ]; then
-                    print_commit "$subject" "$author" "$bugs"
-                fi
-                commit=${line#*: }
-                bugs=""
-                author=""
-                subject=""
-                ;;
-            Author:*) author="${line#Author: }";;
-            LP:*) bugs="${bugs:+${bugs}, }${line#*: }";;
-            "") [ -z "$subject" ] && read subject;;
-        esac
-    done
-    $skip_bugs && bugs=""
-    if [ -n "$commit" ]; then
-        print_commit "$subject" "$author" "$bugs"
-    fi
-}
 
 env_quilt() {
     local diffargs="-p ab --no-timestamps --no-index"
@@ -204,22 +150,23 @@ is_merge_commit() {
 
 main() {
     local short_opts="h:v"
-    local long_opts="help,bugs,update-patches-only,no-bugs,no-prompt,skip-branch-name-check,verbose"
+    local long_opts="help,bugs,update-patches-only,no-bugs,no-prompt,skip-branch-name-check,sru-bug,verbose"
     local getopt_out=""
     getopt_out=$(getopt --name "${0##*/}" \
         --options "${short_opts}" --long "${long_opts}" -- "$@") &&
         eval set -- "${getopt_out}" ||
         { bad_Usage; return; }
     local skip_branch_name_check="${SKIP_BRANCH_NAME_CHECK:-0}"
-    local update_patches_only=false bug_refs_in_clog=true
+    local update_patches_only=false bug_refs_in_clog=true sru_bug_fillstr="SRU_BUG_NUMBER_HERE"
 
-    local cur="" next=""
+    local cur="" next="" 
     while [ $# -ne 0 ]; do
         cur="$1"; next="$2";
         case "$cur" in
             -h|--help) Usage ; exit 0;;
                --skip-branch-name-check) skip_branch_name_check=1;;
                --update-patches-only) update_patches_only=true;;
+               --sru-bug) sru_bug_fillstr=$3; shift;;
                --no-bugs) bug_refs_in_clog=false;;
             -v|--verbose) VERBOSITY=$((${VERBOSITY}+1));;
             --) shift; break;;
@@ -287,7 +234,7 @@ main() {
         sed 's,.*~\([0-9.]*\)[.][0-9]$,~\1.1,')
     [ "${sru_ver_suff}" = "${prev_pkg_ver}" ] && sru_ver_suff=""
 
-    local sru_bug_fillstr="SRU_BUG_NUMBER_HERE" sru_bug_string="" skip_bugs=""
+    local sru_bug_string="" skip_bugs=""
     [ "${bug_refs_in_clog}" = "false" ] && skip_bugs="--skip-bugs"
     if [ -n "$sru_ver_suff" ]; then
         sru_bug_string="(LP: #$sru_bug_fillstr)"
@@ -475,18 +422,16 @@ main() {
         fail "failed git log ${prev_pkg_hash}..${from_ref}"
 
     local entries=""
-    entries=$(
-        echo "  * $new_msg${sru_bug_string:+ ${sru_bug_string}}"
-        git_log_to_dch $skip_bugs < "$gitlog") ||
-            fail "failed git_log_to_dch"
-    add_changelog_entries "$entries" "${new_pkg_ver}" || fail
+    header="  * $new_msg${sru_bug_string:+ ${sru_bug_string}}"
+    entries=`cat $gitlog | log2dch $skip_bugs`
+    add_changelog_entries "$header\n$entries" "${new_pkg_ver}" || fail
 
-    git_log_to_dch < "$gitlog" > "new-upstream-changes.txt" ||
-        fail "failed git_log_to_dch"
+    cat "$gitlog" | log2dch $skip_bugs > "new-upstream-changes.txt" ||
+        fail "failed log2dch"
 
     dch -e || fail "dch -e exited $?"
 
-    if grep -q "$sru_bug_fillstr" debian/changelog; then
+    if grep -q "SRU_BUG_NUMBER_HERE" debian/changelog; then
         echo "You did not fill in an SRU bug string.  Add one now."
         read answer
         dch -e
