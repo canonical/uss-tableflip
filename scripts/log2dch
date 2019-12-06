@@ -4,6 +4,8 @@ VERBOSITY=0
 TEMP_D=""
 COMMIT_URL=${COMMIT_URL:-https://git.launchpad.net/cloud-init/commit/?id=}
 
+FILTER_LIST=( "lp-to-git-user" )
+
 error() { echo "$@" 1>&2; }
 fail() { local r=$?;  [ $r -eq 0 ] && r=1; failrc "$r" "$@"; }
 failrc() { local r=$1; shift; [ $# -eq 0 ] || error "$@"; exit "$r"; }
@@ -18,6 +20,7 @@ Usage: ${0##*/} [ options ] [input-file]
    options:
       --vcs VCS         which log format is this ('git', 'auto', 'bzr')
                         default: auto
+      --skip-bugs       Do not print bug info
       --trello          output in markdown for checklist items in trello
       --hackmd          output markdown formated for hackmd.io
       --commit-url=URL  use a different commit url.
@@ -67,11 +70,13 @@ debug() {
 bzr_log_to_dch() {
     local line="" commit="" bugs="" bug=""
     local func="${1:-print_dch}"
+    local skip_bugs="${2:-false}"
     while :; do
         read line || break
         case "$line" in
             revno:\ *)
                 if [ -n "$commit" ]; then
+	            $skip_bugs && bugs=""
                     $func "$commit" "$subject" "$author" "$bugs"
                 fi
                 commit=${line#*: }
@@ -89,6 +94,7 @@ bzr_log_to_dch() {
         esac
     done
     if [ -n "$commit" ]; then
+	$skip_bugs && bugs=""
         $func "$commit" "$subject" "$author" "$bugs"
     fi
 }
@@ -112,6 +118,11 @@ print_hackmd() {
     if [[ $buf == 'tests:'* ]]; then
 	buf="~~NOTEST ${buf}~~"
     fi
+    for filter in "${FILTER_LIST[@]}"; do
+        if [[ "$subject" != "${subject/$filter//}" ]]; then
+            return  # skip echo because our filter string matched
+	fi
+    done
     echo "- $buf"
 }
 
@@ -126,6 +137,11 @@ print_trello() {
         buf="${buf:+${buf} }[${bug}](http://pad.lv/$bug)"
     done
     buf="${buf:+${buf} }$subject"
+    for filter in "${FILTER_LIST[@]}"; do
+        if [[ "$subject" != "${subject/$filter//}" ]]; then
+            return  # skip echo because our filter string matched
+	fi
+    done
     echo "$buf"
 }
 
@@ -136,9 +152,14 @@ print_dch() {
     #( for i in ${bugs}; do echo ${i%,}; done); return
     aname=${author% <*}
     case "$aname" in
-        Chad\ Smith|Ryan\ Harper|Scott\ Moser|Daniel\ Watkins) aname="";;
+        Chad\ Smith|Ryan\ Harper|Daniel\ Watkins) aname="";;
     esac
     abugs="${aname:+ [${aname}]}${bugs:+ (LP: ${bugs})}"
+    for filter in "${FILTER_LIST[@]}"; do
+        if [[ "$subject" != "${subject/$filter//}" ]]; then
+            return  # skip echo because our filter string matched
+	fi
+    done
     if [ $((${#subject}+${#abugs})) -le $((ll-${#indent})) ]; then
         echo "${indent}${subject}${abugs}"
     elif [ ${#subject} -ge $((ll-${#indent})) ]; then
@@ -160,11 +181,13 @@ print_dch() {
 git_log_to_dch() {
     local line="" commit="" bugs=""
     local func=${1:-print_dch}
+    local skip_bugs=${2:-false}
     while :; do
         read line || break
         case "$line" in
             commit\ *)
                 if [ -n "$commit" ]; then
+	            $skip_bugs && bugs=""
                     "$func" "$commit" "$subject" "$author" "$bugs"
                 fi
                 commit=${line#commit }
@@ -178,6 +201,7 @@ git_log_to_dch() {
         esac
     done
     if [ -n "$commit" ]; then
+	$skip_bugs && bugs=""
         $func "$commit" "$subject" "$author" "$bugs"
     fi
 }
@@ -189,19 +213,20 @@ assert_temp_d() {
 
 main() {
     local short_opts="ht:v"
-    local long_opts="commit-url:,hackmd,help,trello,vcs:,verbose"
+    local long_opts="commit-url:,hackmd,help,skip-bugs,trello,vcs:,verbose"
     local getopt_out=""
     getopt_out=$(getopt --name "${0##*/}" \
         --options "${short_opts}" --long "${long_opts}" -- "$@") &&
         eval set -- "${getopt_out}" ||
         { bad_Usage; return; }
 
-    local cur="" next="" vcs="auto" input="-" omode="dch"
+    local cur="" next="" vcs="auto" input="-" omode="dch" skip_bugs=false
 
     while [ $# -ne 0 ]; do
         cur="$1"; next="$2";
         case "$cur" in
             -h|--help) Usage ; exit 0;;
+               --skip-bugs) skip_bugs=true;;
                --trello) omode="trello";;
                --hackmd) omode="hackmd";;
                --commit-url) COMMIT_URL="$next";;
@@ -251,7 +276,7 @@ main() {
         *) printer="print_dch";;
     esac
     local func="${vcs}_log_to_dch"
-    "$func" "$printer"
+    "$func" "$printer" $skip_bugs
     return
 }
 
