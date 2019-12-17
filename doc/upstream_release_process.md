@@ -13,27 +13,28 @@ Examples:
  
 The commit content should consist of
 
- 1. File a bug.
+ 1. cd to your root directory of the cloud-init repository
+ 2. Run `./scripts/upstream-release` to get content for filing a bug and
+    sending a release mail  to the mailing list
+ 3. File a bug with subject Release 20.1 and content from `upstream-release`
+    script
  
-    * Example Bugs: [18.1](https://pad.lv/1751145), [18.2](https://bugs.launchpad.net/bugs/1759318)
+    * Example Bugs: [18.1](https://pad.lv/1751145), [18.2](https://bugs.launchpad.net/bugs/1759318), [19.4](https://pad.lv/1851428)
  
- 2. changing the number in cloudinit/version.py
- 3. updating ChangeLog file in source.
-    This is most easily done done by using [log2dch](https://gist.github.com/smoser/813c84bc7a79efc75d3f7fc2f383f12f).
-    
-        git log 17.1..HEAD | log2dch | sed 's/^   //g'
-        
- 4. commit.  The git commit message should look like others:
+ 4. Your console will also prompt to perform the necessary changes for an
+    upstream version bump in cloud-init repo.
+ 5. git commit -a.  The git commit message should look like others:
 
-        release 17.2
+        release 19.4
         
-        Bump the version in cloudinit/version.py to be 17.2 and update ChangeLog.
-        
- 5. Tag.  At this point running 'tox' will fail, complaining that your version does not match what git-describe does.  To fix that you have to tag.
+        Bump the version in cloudinit/version.py to be 19.4 and update ChangeLog.
+
+        LP: #<YOUR_UPSTREAM_BUG>
+ 6. Tag.  At this point running 'tox' will fail, complaining that your version does not match what git-describe does.  To fix that you have to tag.
 
         git tag --annotate --sign YY.N
 
- 6. push the branch up for review and create a merge proposal.  We will use that MP for some documentation on things that have been tested.
+ 7. push the branch up for review and create a merge proposal.  We will use that MP for some documentation on things that have been tested.
     Example merge proposals: [17.2](https://code.launchpad.net/~smoser/cloud-init/+git/cloud-init/+merge/335233), [18.1](https://code.launchpad.net/~smoser/cloud-init/+git/cloud-init/+merge/338588)
     
     **Note**: you need to push the tag or c-i will fail in check version.

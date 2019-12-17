@@ -1,0 +1,80 @@
+#!/bin/bash
+
+if [ $# != 2 ]; then
+ echo "usage: $0 <RELEASE_MAJOR.MINOR> <PREVIOUS_MAJOR_MINOR>"
+ exit 1
+fi
+
+RELEASE_MAJOR_MINOR=$1
+PREVIOUS_MAJOR_MINOR=$2
+
+RELEASE_TIME_SPAN=`git log $PREVIOUS_MAJOR_MINOR..HEAD --pretty="%ar" | tail -n 1`
+
+if [ ! -e ChangeLog ]; then
+  echo "Please run this script from the root directory of cloud-init source tree"
+  exit 1
+fi
+
+RELEASE_TIME_SPAN=${RELEASE_TIME_SPAN/ ago/}
+NUM_CONTRIBUTORS=`git log 19.3..HEAD --pretty="%aN" | sort -u | wc -l`
+NUM_DOMAINS=`git log 19.3..HEAD --pretty="%aE" | sort -u | wc -l`
+NUM_BUGS=`git log 19.3..HEAD | log2dch | grep "LP: #" | wc -l` 
+CHANGELOG=`git log 19.3..HEAD | log2dch |  sed 's/^   //g'`
+
+echo "Create upstream release bug at https://bugs.launchpad.net/cloud-init/+filebug"
+
+
+echo "The content of the process release bug will be printed to this console."
+echo "Continue?"
+read 
+
+echo Summary: Release $RELEASE_MAJOR_MINOR
+echo "Futher information:"
+cat << EOF
+== Release Notes ==
+
+Cloud-init release $RELEASE_MAJOR_MINOR is now available
+
+The $RELEASE_MAJOR_MINOR release:
+ * spanned about $RELEASE_TIME_SPAN
+ * had $NUM_CONTRIBUTORS contributors from $NUM_DOMAINS domains
+ * fixed $NUM_BUGS launchpad issues
+
+Highlights:
+  <TODO_SUMMARIZED_HIGHLIGHTS>
+
+== Changelog ==
+$CHANGELOG
+EOF
+
+echo "Refresh master and create a new release branch branch? (y/n)"
+read RESP
+if [ "$RESP" = "y" ]; then
+  git checkout master
+  git pull
+  git checkout -b upstream/$RELEASE_MAJOR_MINOR
+  echo -e "$RELEASE_MAJOR_MINOR\n$CHANGELOG\n\n$(cat ChangeLog)" > ChangeLog
+  sed -i "s/$PREVIOUS_MAJOR_MINOR/$RELEASE_MAJOR_MINOR/" cloudinit/version.py
+  git diff
+  echo "Enter the bug ID that was created for this upstream release "
+  read BUG_ID
+  cat > commit.msg <<EOF
+Release 19.3
+
+Bump the version in cloudinit/version.py to be 19.3 and update ChangeLog.
+
+LP: #$BUG_ID
+EOF
+
+  git commit -a -F commit.msg
+fi
+
+cat <<EOF
+Perform the following actions:
+
+ git tag --annotate --sign $RELEASE_MAJOR_MINOR
+ git push <YOUR_REMOTE> upstream/$RELEASE_MAJOR_MINOR
+ git push origin $RELEASE_MAJOR_MINOR  # So Travis CI passes
+
+ Create the merge proposal from your upstream/$RELEASE_MAJOR_MINOR branch
+EOF
