@@ -36,7 +36,7 @@ def main():
 
     args = parser.parse_args()
 
-    if not (re.match(r"^[0-9][0-9].[0-9]$", args.version) or
+    if not (re.match(r"^[0-9][0-9].[0-9](-[0-9]+)?$", args.version) or
             re.match(r"[0-9].[0-9]+$", args.version)):
         sys.stderr.write("%s does not look like a version.\n" % args.version)
         sys.exit(1)
