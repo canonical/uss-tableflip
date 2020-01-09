@@ -1,8 +1,5 @@
 #!/usr/bin/python3
-"""Mark the provided launchpad bugs as fix-released.
-
-Update the bug with a comment.
-"""
+"""Create bugs in launchpad for the specified project"""
 
 import argparse
 import sys
@@ -11,21 +8,26 @@ from launchpadlib.launchpad import Launchpad
 
 BUG_IMPORTANCE = ['Low', 'Wishlist', 'Medium', 'High', 'Critical']
 BUG_STATUS = ['New', 'Confirmed', 'Triaged', 'In Progress', 'Fix Committed']
+CREATE_BUG_MESSAGE_TMPL = """
+Creating a bug in {project}:
+Importance: {importance}
+Status:     {status}
+Tags:       {tags}
+Title: {title}
+
+{description}
+"""
 
 def main():
-    parser = argparse.ArgumentParser()
-
-    subject_tmpl = "Fixed in {project} version {version}."
-    comment_tmpl = (
-        "This bug is believed to be fixed in {project} in version "
-        "{version}. If this is still a problem for you, please make a "
-        "comment and set the state back to New\n\nThank you.")
+    parser = argparse.ArgumentParser(description=__doc__)
 
     parser.add_argument('--title', required=True, action='store',
                         help="Bug title string")
+    parser.add_argument('--tags', action='append', default=[],
+                        help="Specify optional tag to add to the bug.")
     parser.add_argument('--importance', action='store', default=None,
                         choices=BUG_IMPORTANCE, help="Bug importance value")
-    parser.add_argument('--status', action='store', default=None,
+    parser.add_argument('--status', action='store', default='New',
                         choices=BUG_STATUS, help="Bug status value")
     parser.add_argument('--description', action='store', required=True,
                         help="Bug description string or @file")
@@ -46,9 +48,18 @@ def main():
             description = stream.read()
     else:
         description = args.description
-    lp_bug = lp.bugs.createBug(
-        description=description, title=args.title, target=lp_project,
-        tags=['bitesize'])
+    create_args = {
+        "target": lp_project,
+        "title": args.title,
+        "description": description,
+        "tags": args.tags}
+
+    print(CREATE_BUG_MESSAGE_TMPL.format(
+        project=project_name, importance=args.importance,
+        status=args.status, **create_args))
+    if args.dry_run:
+        return
+    lp_bug = lp.bugs.createBug(**create_args)
     for task in lp_bug.bug_tasks:
         if task.bug_target_name == project_name:
             if args.importance:
