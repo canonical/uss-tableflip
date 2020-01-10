@@ -2,8 +2,6 @@
 """Create bugs in launchpad for the specified project"""
 
 import argparse
-import sys
-import re
 from launchpadlib.launchpad import Launchpad
 
 BUG_IMPORTANCE = ['Low', 'Wishlist', 'Medium', 'High', 'Critical']
@@ -18,12 +16,13 @@ Title: {title}
 {description}
 """
 
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
 
     parser.add_argument('--title', required=True, action='store',
                         help="Bug title string")
-    parser.add_argument('--tags', action='append', default=[],
+    parser.add_argument('--tag', action='append', default=[],
                         help="Specify optional tag to add to the bug.")
     parser.add_argument('--importance', action='store', default=None,
                         choices=BUG_IMPORTANCE, help="Bug importance value")
@@ -52,7 +51,7 @@ def main():
         "target": lp_project,
         "title": args.title,
         "description": description,
-        "tags": args.tags}
+        "tags": args.tag}
 
     print(CREATE_BUG_MESSAGE_TMPL.format(
         project=project_name, importance=args.importance,
@@ -67,6 +66,7 @@ def main():
             if args.status:
                 task.status = args.status
             task.lp_save()
+
 
 if __name__ == '__main__':
     main()
