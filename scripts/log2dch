@@ -4,7 +4,7 @@ VERBOSITY=0
 TEMP_D=""
 COMMIT_URL=${COMMIT_URL:-https://git.launchpad.net/cloud-init/commit/?id=}
 
-FILTER_LIST=( "lp-to-git-user" )
+FILTER_LIST=( "lp-to-git-user" "Merge pull request" "Merge branch" )
 
 error() { echo "$@" 1>&2; }
 fail() { local r=$?;  [ $r -eq 0 ] && r=1; failrc "$r" "$@"; }
