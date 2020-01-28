@@ -37,7 +37,7 @@ new-upstream-release does:
   * makes changes to debian/patches/series and drops any cherry-picks in that directory.
   * refreshes any patches in debian/patches/
 
-  * opens $EDITOR with an option to edit debian/changelog.  In SRU, I will generally strip out commits that are not related to ubuntu, and also strip out or join any fix/revert/fixup commits into one.  Note this is a *ubuntu* changelog, so it makes sense that it only have Ubuntu specific things listed. 
+  * opens $EDITOR with an option to edit debian/changelog.  In SRU, I will generally strip out commits that are not related to ubuntu, and also strip out or join any fix/revert/fixup commits into one.  Note this is a *ubuntu* changelog, so it makes sense that it only have Ubuntu specific things listed.
 
   * During SRU regression fixes: use a separate changelog entry from what is already in -proposed and remove the SRU_BUG_NUMBER_HERE from the newest "New upstream snapshot" line.
 
@@ -162,7 +162,7 @@ The procedure is as follows:
  * quilt new <descriptive_patch_nam>.patch  # Create a new named debian/patch
  * quilt edit <somefile_you_are_changing>   # For each changed file
  * quilt refresh                            # Write the patch to debian/patches
- * quilt header --dep3 -e                   # Edit the descriptive patch header 
+ * quilt header --dep3 -e                   # Edit the descriptive patch header
  * quilt pop -a
  * git add debian/patches
  * vi debian/changelog                      # Record the new debian patch file
@@ -180,7 +180,7 @@ If someone uploads to ubuntu and does not use this process, we wont have
 orig tarball and put it into the branch and tag appropriately.  The tool
 to do this is [git-import-dsc](https://gist.github.com/smoser/6391b854e6a80475aac473bba4ef0310#file-git-import-dsc).
 
-Its usage is fairly simple.  Assuming a upload of cloud-init to 
+Its usage is fairly simple.  Assuming a upload of cloud-init to
 xenial-proposed, just run it as:
 
     $ git checkout ubuntu/xenial
@@ -202,6 +202,60 @@ We have daily packaging recipes that upload to the [daily ppa](https://code.laun
   * [artful](https://code.launchpad.net/~cloud-init-dev/+recipe/cloud-init-daily-artful)
   * [bionic](https://code.launchpad.net/~cloud-init-dev/+recipe/cloud-init-daily-bionic)
   * [devel](https://code.launchpad.net/~cloud-init-dev/+recipe/cloud-init-daily-devel)
+
+### When the daily recipe build fails ###
+
+The daily recipe for each release checks out master and then merges the ubuntu/$release
+and builds the package from there.  From time to time, the patches in the
+ubuntu/$release branch need to be refreshed/updated as upstream/master changes.
+
+This is typically done during the new-upstream-release tool process, however,
+new commits to master can break the patches.  In particular, the
+ubuntu-advantage refactor is reverted on bionic and xenial; this patch needs
+to be refreshed whenever changes to cloud-init touch:
+
+ * cloudinit/config/cc_ubuntu_advantage.py
+ * cloudinit/config/tests/test_ubuntu_advantage.py
+
+The process to refresh *just* this patch is the following
+
+
+    $ git checkout ubuntu/xenial; git reset --hard upstream/ubuntu/xenial
+    $ new-upstream-snapshot -v --update-patches-only
+
+At this point if daily builds are failing, this will fail when quilt
+cannot apply the patch and put you into a subshell and ask you to
+fix and then quit refresh.  Do the following to fix the patch
+
+    $ new-upstream-snapshot -v --update-patches-only
+    $ (refresh-fix)(hostname) cloud-init % quilt push -f
+    $ (refresh-fix)(hostname) cloud-init % git checkout 528366820bb48c13957d0c58afc2a46a3ba84bef cloudinit/config/tests/test_ubuntu_advantage.py
+    $ (refresh-fix)(hostname) cloud-init % git checkout 528366820bb48c13957d0c58afc2a46a3ba84bef cloudinit/config/cc_ubuntu_advantage.py
+    $ (refresh-fix)(hostname) cloud-init % exit 0
+
+At this point, we've refreshed the patch on this branch.  Copy out the patch
+for testing and re-use.
+
+    $ cp debian/patches/ubuntu-advantage-revert-tip.patch /tmp/$release-debian/patches/ubuntu-advantage-revert-tip.patch
+
+To verify this fixes things for the daily build.
+
+    $ mkdir /tmp/test-daily-recipe-xenial
+    $ cd /tmp/test-daily-recipe-xenial
+    $ git clone https://github.com/canonical/cloud-init.git
+    $ cd cloud-init
+    $ git remote add local-ci-release /path/to/your/cloud-init/release/repo
+    $ git fetch local-ci-release
+    $ git merge local-ci-release/ubuntu/xenial
+    $ quilt push -a; quilt pop -a
+
+
+The propose the fix you need to copy in just the fixed debian patch
+
+    $ git checkout ubuntu/xenial; git reset --hard upstream/ubuntu/xenial
+    $ cp /tmp/xenial-debian/patches/ubuntu-advantage-revert-tip.patch debian/patches/ubuntu-advantage-revert-tip.patch
+    $ git commit debian/patches/ubuntu-advantage-revert-tip.patch
+
 
 ## Links ##
 
