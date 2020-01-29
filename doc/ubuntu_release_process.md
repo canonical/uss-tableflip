@@ -217,23 +217,36 @@ to be refreshed whenever changes to cloud-init touch:
  * cloudinit/config/cc_ubuntu_advantage.py
  * cloudinit/config/tests/test_ubuntu_advantage.py
 
-The process to refresh *just* this patch is the following
-
-
-    $ git checkout ubuntu/xenial; git reset --hard upstream/ubuntu/xenial
-    $ new-upstream-snapshot -v --update-patches-only
-
 At this point if daily builds are failing, this will fail when quilt
 cannot apply the patch and put you into a subshell and ask you to
-fix and then quit refresh.  Do the following to fix the patch
+fix and then quit refresh.  The source of the issue is that the release
+branch needs the upstream changes to ensure the patch still applies.
+Do the following to fix the patch
 
-    $ new-upstream-snapshot -v --update-patches-only
+    $ new-upstream-snapshot -v
     $ (refresh-fix)(hostname) cloud-init % quilt push -f
     $ (refresh-fix)(hostname) cloud-init % git checkout 528366820bb48c13957d0c58afc2a46a3ba84bef cloudinit/config/tests/test_ubuntu_advantage.py
     $ (refresh-fix)(hostname) cloud-init % git checkout 528366820bb48c13957d0c58afc2a46a3ba84bef cloudinit/config/cc_ubuntu_advantage.py
+    $ (refresh-fix)(hostname) cloud-init % quilt refresh
     $ (refresh-fix)(hostname) cloud-init % exit 0
 
-At this point, we've refreshed the patch on this branch.  Copy out the patch
+You will be prompted to commit the updated debian/changelog and it will
+mention that you need to supply an SRU bug number.  In our case, we are
+not releasing so we can leave the string unchanged.  It will reprompt
+you to add one now; you can simply just exit with no changes.  Now
+debian/changelog is updated but not committed.  You need to commit like so:
+
+    $ version=$(dpkg-parsechangelog --show-field Version | awk -F'-0ubuntu1' '{print $1}')
+    $ git commit -m "update changelog (New upstream snapshot $version)" debian/changelog
+
+
+Revert your changes to the two files:
+
+    $ git checkout HEAD cloudinit/config/tests/test_ubuntu_advantage.py
+    $ git checkout HEAD cloudinit/config/cc_ubuntu_advantage.py
+
+
+At this point, we've refreshed the patch on this branch, copy out the patch
 for testing and re-use.
 
     $ cp debian/patches/ubuntu-advantage-revert-tip.patch /tmp/$release-debian/patches/ubuntu-advantage-revert-tip.patch
@@ -250,11 +263,12 @@ To verify this fixes things for the daily build.
     $ quilt push -a; quilt pop -a
 
 
-The propose the fix you need to copy in just the fixed debian patch
+With the patch passing verification, push this branch up for review:
 
-    $ git checkout ubuntu/xenial; git reset --hard upstream/ubuntu/xenial
-    $ cp /tmp/xenial-debian/patches/ubuntu-advantage-revert-tip.patch debian/patches/ubuntu-advantage-revert-tip.patch
-    $ git commit debian/patches/ubuntu-advantage-revert-tip.patch
+    $ git push <user github repo> ubuntu/xenial::ubuntu/xenial-fix-daily-ppa-YYYYMMDD
+
+In the github UI, make sure the proposal is pointing to ubuntu/xenial rather
+than master.
 
 
 ## Links ##
