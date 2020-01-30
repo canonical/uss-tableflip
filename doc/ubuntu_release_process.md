@@ -221,24 +221,16 @@ At this point if daily builds are failing, this will fail when quilt
 cannot apply the patch and put you into a subshell and ask you to
 fix and then quit refresh.  The source of the issue is that the release
 branch needs the upstream changes to ensure the patch still applies.
-Do the following to fix the patch
+Do the following to fix the patch:
 
-    $ new-upstream-snapshot -v
+    $ new-upstream-snapshot -v --skip-release
     $ (refresh-fix)(hostname) cloud-init % quilt push -f
     $ (refresh-fix)(hostname) cloud-init % git checkout 528366820bb48c13957d0c58afc2a46a3ba84bef cloudinit/config/tests/test_ubuntu_advantage.py
     $ (refresh-fix)(hostname) cloud-init % git checkout 528366820bb48c13957d0c58afc2a46a3ba84bef cloudinit/config/cc_ubuntu_advantage.py
     $ (refresh-fix)(hostname) cloud-init % quilt refresh
     $ (refresh-fix)(hostname) cloud-init % exit 0
 
-You will be prompted to commit the updated debian/changelog and it will
-mention that you need to supply an SRU bug number.  In our case, we are
-not releasing so we can leave the string unchanged.  It will reprompt
-you to add one now; you can simply just exit with no changes.  Now
-debian/changelog is updated but not committed.  You need to commit like so:
-
-    $ version=$(dpkg-parsechangelog --show-field Version | awk -F'-0ubuntu1' '{print $1}')
-    $ git commit -m "update changelog (New upstream snapshot $version)" debian/changelog
-
+Follow the prompt to commit the updated debian/changelog.
 
 Revert your changes to the two files:
 
