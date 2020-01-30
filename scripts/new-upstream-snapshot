@@ -31,6 +31,8 @@ options:
       --skip-branch-name-check    do not require this branch start with ubuntu/
       --update-patches-only       stop after dropping cherry-picks and
                                   refreshing patches in debian/patches/
+      --skip-release              Sync upstream commits, but avoid SRU_BUG
+                                  checks as this release will not be published
       --no-bugs)                  do not put bug refs (LP: #XXX) in changelog.
    -v|--verbose)                  increase verbosity.
 EOF
@@ -64,6 +66,7 @@ add_changelog_entries() {
     local entries="$1" version="$2" dist="" unrel_entries="" tmp="" out=""
     local changelog="debian/changelog" old="${TEMP_D}/old-changes"
     local pkg_name="" new="${TEMP_D}/unreleased-changes"
+    local snapshot_header="New upstream snapshot"
     dist=$(dpkg-parsechangelog --show-field Distribution)
     pkg_name=$(dpkg-parsechangelog --show-field Source)
     if [ "$dist" = "UNRELEASED" ]; then
@@ -90,9 +93,19 @@ add_changelog_entries() {
     echo "$pkg_name ($version) UNRELEASED; urgency=medium"
     echo
     if [ -n "${unrel_entries}" ]; then
-        echo "${unrel_entries}"
+        # If both unreleased and new entries are New upstream snapshots
+        # combine them
+        { IFS="$CR"; set -- $unrel_entries; IFS="$oifs"; }
+        for line in "$@"; do
+            case "${line}" in
+                # Inject current entries in place of previous snapshot_header
+                *${snapshot_header}*) echo "${entries}"; entries="";;
+                # Print rest of unreleased lines in the changelog
+                *) echo "${line}";;
+            esac
+        done
     fi
-    echo "$entries"
+    [ -n "${entries}" ] && echo "${entries}"
     printf "\n -- %s <%s>  %s\n\n" "$DEBFULLNAME" "$DEBEMAIL" "$(date -R)"
     } > "$new"
     cat "$new" "$old" > "$changelog"
@@ -150,14 +163,14 @@ is_merge_commit() {
 
 main() {
     local short_opts="h:v"
-    local long_opts="help,bugs,update-patches-only,no-bugs,no-prompt,skip-branch-name-check,sru-bug,verbose"
+    local long_opts="help,bugs,update-patches-only,no-bugs,no-prompt,skip-branch-name-check,skip-release,sru-bug,verbose"
     local getopt_out=""
     getopt_out=$(getopt --name "${0##*/}" \
         --options "${short_opts}" --long "${long_opts}" -- "$@") &&
         eval set -- "${getopt_out}" ||
         { bad_Usage; return; }
     local skip_branch_name_check="${SKIP_BRANCH_NAME_CHECK:-0}"
-    local update_patches_only=false bug_refs_in_clog=true sru_bug_fillstr="SRU_BUG_NUMBER_HERE"
+    local update_patches_only=false bug_refs_in_clog=true skip_release=false sru_bug_fillstr="SRU_BUG_NUMBER_HERE"
 
     local cur="" next="" 
     while [ $# -ne 0 ]; do
@@ -165,6 +178,7 @@ main() {
         case "$cur" in
             -h|--help) Usage ; exit 0;;
                --skip-branch-name-check) skip_branch_name_check=1;;
+               --skip-release) skip_release=true;;
                --update-patches-only) update_patches_only=true;;
                --sru-bug) sru_bug_fillstr=$3; shift;;
                --no-bugs) bug_refs_in_clog=false;;
@@ -431,12 +445,14 @@ main() {
 
     dch -e || fail "dch -e exited $?"
 
-    if grep -q "SRU_BUG_NUMBER_HERE" debian/changelog; then
-        echo "You did not fill in an SRU bug string.  Add one now."
-        read answer
-        dch -e
-        grep -q "$sru_bug_fillstr" debian/changelog &&
-            fail "You didn't fix it (debian/changelog has $sru_bug_string)"
+    if [ "${skip_release}" = "false" ]; then
+        if grep -q "SRU_BUG_NUMBER_HERE" debian/changelog; then
+            echo "You did not fill in an SRU bug string.  Add one now."
+            read answer
+            dch -e
+            grep -q "$sru_bug_fillstr" debian/changelog &&
+                fail "You didn't fix it (debian/changelog has $sru_bug_string)"
+        fi
     fi
 
     git diff
@@ -463,14 +479,22 @@ main() {
     else
         prev_dist=${prev_dist%-proposed}
     fi
-    cat <<EOF
-wrote new-upstream-changes.txt for $pkg_name version ${new_pkg_ver}.
+    echo wrote new-upstream-changes.txt for $pkg_name version ${new_pkg_ver}.
+    if [ "${skip_release}" = "true" ]; then
+        cat <<EOF
+        push your branch for review:
+git commit -m "update changelog (${new_msg%.} $new_upstream_ver)." debian/changelog
+git push <remote> HEAD
+EOF
+    else
+        cat <<EOF
 release with:
 sed -i -e "1s/UNRELEASED/${prev_dist}${release_suffix}/" debian/changelog
 git commit -m "releasing $pkg_name version $new_pkg_ver" debian/changelog
 git tag $tag
 # optionally push your tag: git push <remote> $tag
 EOF
+    fi
 
     return 0
 }
