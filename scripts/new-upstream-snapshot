@@ -479,9 +479,15 @@ main() {
     else
         prev_dist=${prev_dist%-proposed}
     fi
-    if [ "${skip_release}" = "false" ]; then
+    echo wrote new-upstream-changes.txt for $pkg_name version ${new_pkg_ver}.
+    if [ "${skip_release}" = "true" ]; then
         cat <<EOF
-wrote new-upstream-changes.txt for $pkg_name version ${new_pkg_ver}.
+        push your branch for review:
+git commit -m "update changelog (${new_msg%.} $new_upstream_ver)." debian/changelog
+git push <remote> HEAD
+EOF
+    else
+        cat <<EOF
 release with:
 sed -i -e "1s/UNRELEASED/${prev_dist}${release_suffix}/" debian/changelog
 git commit -m "releasing $pkg_name version $new_pkg_ver" debian/changelog
