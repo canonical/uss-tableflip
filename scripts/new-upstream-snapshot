@@ -149,7 +149,7 @@ find_existing_remote() {
 
 is_merge_commit() {
     local commitish="$1" out="" num="" numlines=""
-    out=$(git show "--format=%P" "$commitish") ||
+    out=$(git show --no-patch "--format=%P" "$commitish") ||
         { error "failed git show --format=%P $commitish"; return 2; }
     numlines=$(echo "$out" | wc -l)
     [ "$numlines" -eq 1 ] || {
