@@ -16,10 +16,10 @@ if [ ! -e ChangeLog ]; then
 fi
 
 RELEASE_TIME_SPAN=${RELEASE_TIME_SPAN/ ago/}
-NUM_CONTRIBUTORS=`git log 19.3..HEAD --pretty="%aN" | sort -u | wc -l`
-NUM_DOMAINS=`git log 19.3..HEAD --pretty="%aE" | sort -u | wc -l`
-NUM_BUGS=`git log 19.3..HEAD | log2dch | grep "LP: #" | wc -l` 
-CHANGELOG=`git log 19.3..HEAD | log2dch |  sed 's/^   //g'`
+NUM_CONTRIBUTORS=`git log $PREVIOUS_MAJOR_MINOR..HEAD --pretty="%aN" | sort -u | wc -l`
+NUM_DOMAINS=`git log $PREVIOUS_MAJOR_MINOR..HEAD --pretty="%aE" | sort -u | wc -l`
+NUM_BUGS=`git log $PREVIOUS_MAJOR_MINOR..HEAD | log2dch | grep "LP: #" | wc -l`
+CHANGELOG=`git log $PREVIOUS_MAJOR_MINOR..HEAD | log2dch |  sed 's/^   //g'`
 
 echo "Create upstream release bug at https://bugs.launchpad.net/cloud-init/+filebug"
 
@@ -29,7 +29,7 @@ echo "Continue?"
 read 
 
 echo Summary: Release $RELEASE_MAJOR_MINOR
-echo "Futher information:"
+echo "Further information:"
 cat << EOF
 == Release Notes ==
 
@@ -38,7 +38,7 @@ Cloud-init release $RELEASE_MAJOR_MINOR is now available
 The $RELEASE_MAJOR_MINOR release:
  * spanned about $RELEASE_TIME_SPAN
  * had $NUM_CONTRIBUTORS contributors from $NUM_DOMAINS domains
- * fixed $NUM_BUGS launchpad issues
+ * fixed $NUM_BUGS Launchpad issues
 
 Highlights:
   <TODO_SUMMARIZED_HIGHLIGHTS>
@@ -59,9 +59,10 @@ if [ "$RESP" = "y" ]; then
   echo "Enter the bug ID that was created for this upstream release "
   read BUG_ID
   cat > commit.msg <<EOF
-Release 19.3
+Release $RELEASE_MAJOR_MINOR
 
-Bump the version in cloudinit/version.py to be 19.3 and update ChangeLog.
+Bump the version in cloudinit/version.py to $RELEASE_MAJOR_MINOR and
+update ChangeLog.
 
 LP: #$BUG_ID
 EOF
