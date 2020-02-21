@@ -30,27 +30,39 @@ The commit content should consist of
         Bump the version in cloudinit/version.py to be 19.4 and update ChangeLog.
 
         LP: #<YOUR_UPSTREAM_BUG>
- 6. Tag.  At this point running 'tox' will fail, complaining that your version does not match what git-describe does.  To fix that you have to tag.
+ 6. Tag.  At this point running 'tox' will fail, complaining that your
+    version does not match what git-describe does.  To fix that you
+    have to tag.
 
         git tag --annotate --sign YY.N
 
- 7. push the branch up for review and create a merge proposal.  We will use that MP for some documentation on things that have been tested.
-    Example merge proposals: [17.2](https://code.launchpad.net/~smoser/cloud-init/+git/cloud-init/+merge/335233), [18.1](https://code.launchpad.net/~smoser/cloud-init/+git/cloud-init/+merge/338588)
+ 7. Push the branch up for review and create a merge proposal.  We will
+    use that MP for some documentation on things that have been tested.
+    Example merge proposals:
+    [17.2](https://code.launchpad.net/~smoser/cloud-init/+git/cloud-init/+merge/335233),
+    [18.1](https://code.launchpad.net/~smoser/cloud-init/+git/cloud-init/+merge/338588)
 
     **Note**: you need to push the tag or c-i will fail in check version.
 
 ## Push signed tag to git
-This is mostly same as merging anything else and pushing, but make sure to push the tag.
+This is mostly same as merging anything else and pushing, but make sure
+to push the tag.
 
     git checkout master
     git push upstream HEAD 17.2
 
 ## Update Release info on Launchpad.
-Go to https://launchpad.net/cloud-init click the milestone that we're releasing.  That will take you to [lp/cloud-init/+milestone/<X.Y>](http://launchpad.net/cloud-init/+milestone/17.2) .  Hit 'Create release'.
+Go to https://launchpad.net/cloud-init click the milestone that we're
+releasing.  That will take you to
+[lp/cloud-init/+milestone/<X.Y>](http://launchpad.net/cloud-init/+milestone/17.2)
+.  Hit 'Create release'.
 
- Model the Release notes after other releases such as [17.1](https://launchpad.net/cloud-init/+milestone/17.1/) or [17.2](https://launchpad.net/cloud-init/+milestone/17.2)
+ Model the Release notes after other releases such as
+ [17.1](https://launchpad.net/cloud-init/+milestone/17.1/) or
+ [17.2](https://launchpad.net/cloud-init/+milestone/17.2)
 
-To help get some of those bits of information, add '| wc -l' for just the numbers. not done here to have you sanity check output.
+To help get some of those bits of information, add '| wc -l' for just
+the numbers. not done here to have you sanity check output.
 
   * just get log into a file
 
@@ -78,7 +90,8 @@ Then upload that to launchpad.
     $ gpg --sign --armor --detach-sig cloud-init-17.2.tar.gz
 
 
-Note, we can do this step including the 'Update Release info' step with with 'lp-project-upload' from 'lptools' package:
+Note, we can do this step including the 'Update Release info' step with
+with 'lp-project-upload' from 'lptools' package:
 
 
     $ lp-project-upload cloud-init 17.2 cloud-init-17.2.tar.gz 17.3 changelog-file releasenotes-file
@@ -86,7 +99,9 @@ Note, we can do this step including the 'Update Release info' step with with 'lp
 
 ## Close bugs.
 Any bugs that were listed should be marked as 'fix-released' now.
-There is a tool in [uss-tableflip](https://github.com/CanonicalLtd/uss-tableflip) called lp-bugs-released that makes this sane.
+There is a tool in
+[uss-tableflip](https://github.com/CanonicalLtd/uss-tableflip) called
+lp-bugs-released that makes this sane.
 
     # git log <last-release>..<this-release>
     $ git log 17.1..17.2 | grep "^[ ]*LP:" | sort -u
@@ -116,4 +131,5 @@ Follow the Ubuntu release process doc [ubuntu-release-process](https://gist.gith
 
 # Opening next release
 
-  * Go to https://launchpad.net/cloud-init/trunk . Create a milestone, enter the next release number (YY.1) and pick a target date.
+  * Go to https://launchpad.net/cloud-init/trunk . Create a milestone,
+    enter the next release number (YY.1) and pick a target date.
