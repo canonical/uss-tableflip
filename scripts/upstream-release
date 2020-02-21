@@ -71,11 +71,5 @@ EOF
 fi
 
 cat <<EOF
-Perform the following actions:
-
- git tag --annotate --sign $RELEASE_MAJOR_MINOR
- git push <YOUR_REMOTE> upstream/$RELEASE_MAJOR_MINOR
- git push origin $RELEASE_MAJOR_MINOR  # So Travis CI passes
-
  Create the merge proposal from your upstream/$RELEASE_MAJOR_MINOR branch
 EOF

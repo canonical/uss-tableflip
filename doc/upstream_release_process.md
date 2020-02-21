@@ -2,7 +2,7 @@
 
 This covers the cloud-init upstream release process.
 
-## commit locally, tag, sign, push merge proposal
+## commit locally, push merge proposal
 The change locally to mark a release should look like previous release
 commits.
 
@@ -16,13 +16,13 @@ The commit content should consist of
  1. cd to your root directory of the cloud-init repository
  2. Run `./scripts/upstream-release` to get content for filing a bug and
     sending a release mail  to the mailing list
- 3. File a bug with subject Release 20.1 and content from `upstream-release`
-    script
+ 3. File a bug with a subject like "Release 20.1" and content from
+    `upstream-release` script
 
     * Example Bugs: [18.1](https://pad.lv/1751145), [18.2](https://bugs.launchpad.net/bugs/1759318), [19.4](https://pad.lv/1851428)
 
- 4. Your console will also prompt to perform the necessary changes for an
-    upstream version bump in cloud-init repo.
+ 4. Your console will also prompt you to perform the necessary changes
+    for an upstream version bump in cloud-init repo.
  5. git commit -a.  The git commit message should look like others:
 
         release 19.4
@@ -30,26 +30,23 @@ The commit content should consist of
         Bump the version in cloudinit/version.py to be 19.4 and update ChangeLog.
 
         LP: #<YOUR_UPSTREAM_BUG>
- 6. Tag.  At this point running 'tox' will fail, complaining that your
-    version does not match what git-describe does.  To fix that you
-    have to tag.
 
-        git tag --annotate --sign YY.N
+    N.B. At this point, running `tox` locally will fail, complaining
+    that your version does not match what git-describe does.  CI is
+    configured to work around this problem for release branches, so you
+    can disregard these local failures.  (We will create a tag later in
+    the process which fixes this issue.)
 
- 7. Push the branch up for review and create a merge proposal.  We will
-    use that MP for some documentation on things that have been tested.
+ 6. Push the branch up for review and create a pull request.  We will
+    use that PR for some documentation on things that have been tested.
     Example merge proposals:
     [17.2](https://code.launchpad.net/~smoser/cloud-init/+git/cloud-init/+merge/335233),
     [18.1](https://code.launchpad.net/~smoser/cloud-init/+git/cloud-init/+merge/338588)
+    [20.1](https://github.com/canonical/cloud-init/pull/222)
 
-    **Note**: you need to push the tag or c-i will fail in check version.
-
-## Push signed tag to git
-This is mostly same as merging anything else and pushing, but make sure
-to push the tag.
-
-    git checkout master
-    git push upstream HEAD 17.2
+Once the pull request has been squash merged into master, you can
+proceed.  Ensure that your local master is on that squash-merged commit
+before proceeding.
 
 ## Update Release info on Launchpad.
 Go to https://launchpad.net/cloud-init click the milestone that we're
@@ -79,6 +76,23 @@ the numbers. not done here to have you sanity check output.
   * bugs
 
         grep '^[ ]*LP' git-log | sed -e 's,#,,g' -e 's,.*LP: ,,' -e 's/,[ ]*/\n/'
+
+## Tag and push it to git
+
+First, ensure that you have a clean working tree with the squash-merged
+release commit:
+
+    git checkout master
+    git fetch upstream
+    git reset --hard upstream/master
+
+Then create a signed tag, pointing at the squash-merged release commit:
+
+    git tag --annotate --sign YY.N
+
+Then push it:
+
+    git push upstream YY.N
 
 
 ## Upload source tarball to Launchpad.
