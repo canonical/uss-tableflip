@@ -135,7 +135,20 @@ install-deps [options] [packages]
 EOF
 }
 
+usage_if_help() {
+    # usage_if_help(Usage_func, args)
+    #  useful before calling call_in_env with --user=root to avoid sudo prompt.
+    local usage="$1"
+    shift
+    if [ "$1" = "-h" -o "$1" = "--help" ]; then
+        $usage
+        return 0
+    fi
+    return 1
+}
+
 install_packages() {
+    usage_if_help "Usage_${FUNCNAME[@]}" "$@" && return 0
     call_in_env self "${FUNCNAME[0]}" "$@" --user=root && return "$_RET"
     set -- "${_RET_CMD[@]}"
 
@@ -492,6 +505,7 @@ EOF
 }
 
 add_user() {
+    usage_if_help "Usage_${FUNCNAME[@]}" "$@" && return 0
     call_in_env self "${FUNCNAME[0]}" --user=root "$@" && return "$_RET"
     set -- "${_RET_CMD[@]}"
 
