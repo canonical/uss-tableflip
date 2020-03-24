@@ -120,12 +120,7 @@ This is generally not the mechanism that is preferred for any release supported 
 #### Cherry-pick Process
 The tool for doing this is in ``uss-tableflip/scripts/cherry-pick``.  It takes as import a commit-ish that it will create a cherry-pick from.
 
-    ## just tag current so you have a revert point.
-    $ git tag --delete xx-current >/dev/null 2>&1; git tag xx-current
-    $ git checkout ubuntu/xenial
-    $ cherry-pick dc2bd79949
-
-The tool will:
+The `cherry-pick` tool will:
 
   * add a new file to debian/patches/ named cpick-<commit>-topic that is dep-8 compatible
   * add that patch to debian/patches/series
@@ -133,23 +128,20 @@ The tool will:
   * give you a chance to edit formatted the debian/changelog entry
   * prompt you to commit the change.
 
-From here you follow along with the snapshot upload process from
-[`dch --release` and beyond](#upstream-snapshot-process).
-
-**Note**: After doing uploading, in order to keep the daily builds working, we will then have to revert change.  This is because the recipe will try to build from trunk, and will fail to apply your cherry-picked patch.  This makes sense... it will grab trunk and then try to apply patches, but the cherry-picked patch will already exist.
-
-To do this:
-
-    $ git checkout ubuntu/xenial  # or whatever release.
-    $ new-upstream-snapshot -v --update-patches-only
-    $ git push upstream HEAD
-
-That will produce 1 or 2 commits on the branch with summary like:
-
-  * refresh patches against master commit 2d6e4219
-  * drop cherry picks included in master commit 2d6e4219
-
-After doing that you can go to the recipe pages (see below) and click
+1. Optionally tag current point so you have revert point
+    ```
+    ## just tag current so you have a revert point.
+    $ git tag --delete xx-current >/dev/null 2>&1; git tag xx-current
+    ```
+1. Cherry pick UPSTREAM_COMMITISH
+   ```
+   $ git featch upstream
+   $ git checkout upstream/ubuntu/xenial -b ubuntu/xenial
+   $ cherry-pick dc2bd79949
+   ```
+1. From here you follow along with the snapshot upload process from [`dch --release` and beyond](#upstream-snapshot-process).
+1. Once published, fix daily builds by [reverting your cherry-pick'd patch](#when-the-daily-recipe-build-fails)
+1. After doing that you can go to the recipe pages (see below) and click
 build-now.
 
 ### Adding a quilt patch to debian/patches ###
@@ -205,12 +197,35 @@ We have daily packaging recipes that upload to the [daily ppa](https://code.laun
 
 ### When the daily recipe build fails ###
 
-The daily recipe for each release checks out master and then merges the ubuntu/$release
-and builds the package from there.  From time to time, the patches in the
-ubuntu/$release branch need to be refreshed/updated as upstream/master changes.
+The daily recipe for each release checks out tip of master, merges the ubuntu/$release
+and builds the package from there.  Daily recipe failures occur under two conditions:
+ 1. Tip of master drifts enough that patches in the ubuntu/$release branch need to be refreshed/updated/dropped as upstream/master changes.
+ 1. You just finished a [cherry-pick an upstream commit](#cherry-pick-process) into an
+    ubuntu/$release branch and need to drop that cherry pick patch so daily package
+    recipes continue to build.
 
-This is typically done during the new-upstream-release tool process, however,
-new commits to master can break the patches.  In particular, the
+#### Dropping a cherry-pick patch
+
+ * **During Ubuntu series feature freeze** we cannot use `new-upstream-snapshot` because it pulls in all upstream changes and we don't want to include other upstream commits if we need a second cherry pick during feature freeze:
+   1. LOCAL_PATCH_COMMIT=`git log --pretty=oneline debian/ | awk 'NR == 1{print $1}'`
+   1. git revert $LOCAL_PATCH_COMMIT
+   1. PATCH_FILE=`git show --pretty="" --name-only | awk -F cpick 'NR == 1{printf "cpick" $2}'`
+   1. REVERTED_COMMITISH_MSG=`git log --format="%s" HEAD~1..HEAD | awk -F '"' '/Revert/{print $2}'`
+   1. cat > msg <<EOF
+drop cherry pick included in master $REVERTED_COMMITISH_MSG
+ - ${PATCH_FILE}
+EOF
+   1. dch -i $(cat msg)
+   1. git commit -m 'update changelog' debian/changelog
+
+ * **Outside of Ubuntu series feature freeze**:
+   1. new-upstream-snapshot -v --update-patches-only
+   1. git push upstream HEAD
+
+
+#### Manually refreshing patch quilt failures
+
+Patch refresh is typically done during the `new-upstream-release` process. However, new commits to master can break the patches.  In particular, the
 ubuntu-advantage refactor is reverted on bionic and xenial; this patch needs
 to be refreshed whenever changes to cloud-init touch:
 
