@@ -162,7 +162,7 @@ is_merge_commit() {
 }
 
 main() {
-    local short_opts="h:v"
+    local short_opts="hv"
     local long_opts="help,bugs,update-patches-only,no-bugs,no-prompt,skip-branch-name-check,skip-release,sru-bug,verbose"
     local getopt_out=""
     getopt_out=$(getopt --name "${0##*/}" \
