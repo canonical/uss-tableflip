@@ -168,7 +168,7 @@ main() {
     getopt_out=$(getopt --name "${0##*/}" \
         --options "${short_opts}" --long "${long_opts}" -- "$@") &&
         eval set -- "${getopt_out}" ||
-        { bad_Usage; return; }
+        { Usage; return; }
     local skip_branch_name_check="${SKIP_BRANCH_NAME_CHECK:-0}"
     local update_patches_only=false bug_refs_in_clog=true skip_release=false sru_bug_fillstr="SRU_BUG_NUMBER_HERE"
 
@@ -189,7 +189,7 @@ main() {
     done
 
     [ $# -eq 0 -o $# -eq 1 ] || {
-        bad_Usage "Got $# arguments. expected 0 or 1.";
+        Usage "Got $# arguments. expected 0 or 1.";
         return;
     }
 
