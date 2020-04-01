@@ -1,7 +1,7 @@
 #!/bin/bash
 # https://gist.github.com/smoser/6391b854e6a80475aac473bba4ef0310
 
-VERBOSITY=0
+VERBOSITY=2
 TEMP_D=""
 START_D="$PWD"
 
@@ -20,6 +20,7 @@ Usage: ${0##*/} [ options ] <<ARGUMENTS>>
 
    options:
       --ref R         what to build from [default to current branch].
+    -n | --native     assume native package version despite version string
     -o | --output D   put output in D. [default ../out]
 EOF
 }
@@ -75,8 +76,8 @@ get_genchanges_version() {
 }
 
 main() {
-    local short_opts="ho:v"
-    local long_opts="help,output:,offset:,ref:,verbose"
+    local short_opts="hno:v"
+    local long_opts="help,native,output:,offset:,ref:,verbose"
     local getopt_out=""
     getopt_out=$(getopt --name "${0##*/}" \
         --options "${short_opts}" --long "${long_opts}" -- "$@") &&
@@ -84,12 +85,14 @@ main() {
         { bad_Usage; return; }
 
     local cur="" next="" out_d="../out" ref="" offset="0"
+    local native=false
 
     while [ $# -ne 0 ]; do
         cur="$1"; next="$2";
         case "$cur" in
             -h|--help) Usage ; exit 0;;
                --offset) offset=$next; shift;;
+            -n|--native) native=true;;
             -o|--output) out_d=$next; shift;;
             -v|--verbose) VERBOSITY=$((${VERBOSITY}+1));;
                --ref) ref=$next; shift;;
@@ -124,7 +127,6 @@ main() {
     # turn 0.7.7-10-gbc2c326-0ubuntu1 into 'bc2c326'
     upstream_hash=${upstream_ver##*-g}
 
-    local native=false
     case "${pkg_ver}" in
         *-*) :;;
         *) error "Native package assumed."; native=true;;
