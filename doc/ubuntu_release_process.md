@@ -211,8 +211,9 @@ ubuntu/$release branch need to be refreshed/updated as upstream/master changes.
 
 This is typically done during the new-upstream-release tool process, however,
 new commits to master can break the patches.  In particular, the
-ubuntu-advantage refactor is reverted on bionic and xenial; this patch needs
-to be refreshed whenever changes to cloud-init touch:
+ubuntu-advantage refactor (commit hash: f247dd20ea73f8e153936bee50c57dae9440ecf7)
+is reverted on bionic and xenial; this patch needs to be refreshed whenever changes
+to cloud-init touch:
 
  * cloudinit/config/cc_ubuntu_advantage.py
  * cloudinit/config/tests/test_ubuntu_advantage.py
@@ -221,12 +222,14 @@ At this point if daily builds are failing, this will fail when quilt
 cannot apply the patch and put you into a subshell and ask you to
 fix and then quit refresh.  The source of the issue is that the release
 branch needs the upstream changes to ensure the patch still applies.
-Do the following to fix the patch:
+Do the following to fix the patch (Note: we need to check out the files
+from *before* the refactor, so we specify the previous commit by using
+the ^ suffix)
 
     $ new-upstream-snapshot -v --skip-release
     $ (refresh-fix)(hostname) cloud-init % quilt push -f
-    $ (refresh-fix)(hostname) cloud-init % git checkout 528366820bb48c13957d0c58afc2a46a3ba84bef cloudinit/config/tests/test_ubuntu_advantage.py
-    $ (refresh-fix)(hostname) cloud-init % git checkout 528366820bb48c13957d0c58afc2a46a3ba84bef cloudinit/config/cc_ubuntu_advantage.py
+    $ (refresh-fix)(hostname) cloud-init % git checkout f247dd20ea73f8e153936bee50c57dae9440ecf7^ cloudinit/config/tests/test_ubuntu_advantage.py
+    $ (refresh-fix)(hostname) cloud-init % git checkout f247dd20ea73f8e153936bee50c57dae9440ecf7^ cloudinit/config/cc_ubuntu_advantage.py
     $ (refresh-fix)(hostname) cloud-init % quilt refresh
     $ (refresh-fix)(hostname) cloud-init % exit 0
 
