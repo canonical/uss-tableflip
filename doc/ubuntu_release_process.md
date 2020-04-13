@@ -11,10 +11,10 @@ We build cloud-init master with each release branch to provide a daily
 cloud-init for each of the releases we support. Certain features and behavior
 changes are disabled in release branches. These release branch changes may
 prevent master from merging with the release branch and break the daily recipe
-builds.
-To resolve this conflict we provide fixes (reverting cherry picks or other
-feature redactions) to the release branches in a separate branch named
-ubuntu/daily/$release branch. For example ubuntu/daily/devel, ubuntu/daily/xenial.
+builds. To resolve this conflict we provide fixes (reverting cherry picks or
+other feature redactions) to the release branches in a separate branch named
+ubuntu/daily/$release branch. For example ubuntu/daily/devel,
+ubuntu/daily/xenial.
 
 Note, that there is also the git-ubuntu cloud-init repo (aka "ubuntu server dev importer") at [lp:~usd-import-team/ubuntu/+source/cloud-init](https://code.launchpad.net/~usd-import-team/ubuntu/+source/cloud-init/+git/cloud-init).
 

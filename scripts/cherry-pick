@@ -179,9 +179,11 @@ apply_one_cherry_pick() {
         { error "failed getting log entry from $fpath"; return 1; }
 
     if [ -z "${NEW_VERSION}" ]; then
-        dch -i "cherry-pick $shash: $message"
+        dch -i "cherry-pick $shash: $message" ||
+            fail "Failed to update changelog"
     else
-        dch --newversion ${NEW_VERSION} -m "cherry-pick $shash: $message"
+        dch --newversion ${NEW_VERSION} -m "cherry-pick $shash: $message" ||
+            fail "Failed to update changelog"
     fi
 
     dch -e || {
