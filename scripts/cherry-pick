@@ -4,8 +4,14 @@ VERBOSITY=0
 TEMP_D=""
 CR=$'\n'
 
+
 error() { echo "$@" 1>&2; }
 fail() { [ $# -eq 0 ] || error "$@"; exit 1; }
+
+PKG_NAME=$(dpkg-parsechangelog --show-field Source) ||
+    fail "failed to read Source from changelog"
+CHERRY_PICK_DATA=debian/${PKG_NAME}-cherry-picks
+RECIPE_FIX_COMMIT=debian/${PKG_NAME}-cherry-pick-recipe-fix
 
 Usage() {
     cat <<EOF
@@ -15,7 +21,10 @@ Usage: ${0##*/} [ options ] <<ARGUMENTS>>
    Useful to grab an upstream commit to the current packaging branch.
 
    options:
-      -h | --help  show help
+      -h | --help          show help
+      -d | --daily-remote  the remote from which to checkout the daily branch.
+                           Default: origin
+      -v | --verbose       increase verbosity
 EOF
 }
 
@@ -92,35 +101,32 @@ run_quilt() {
         quilt --quiltrc - "$@"
 }
 
-main() {
-    local short_opts="ho:v"
-    local long_opts="help,verbose"
-    local getopt_out=""
-    getopt_out=$(getopt --name "${0##*/}" \
-        --options "${short_opts}" --long "${long_opts}" -- "$@") &&
-        eval set -- "${getopt_out}" ||
-        { bad_Usage; return; }
+NEW_VERSION=""
 
-    local cur="" next=""
+drop_cherry_pick_from_daily_branch() {
+    local local_cpick_commit="$1" daily_remote="$2"
+    cur_br=$(git rev-parse --abbrev-ref HEAD) ||
+        { error "failed to get current branch name"; return 1; }
+    daily_br=${cur_br/ubuntu/ubuntu\/daily}
+    git fetch ${daily_remote}
+    echo "Backing out cherry-pick from ${daily_br} branch"
+    if [ $(git show-ref refs/heads/${daily_br}) ]; then
+        # Branch already exists so refresh it to remote/ubuntu/daily/<series>
+        git checkout ${daily_br}
+        git reset --hard ${daily_remote}/${daily_br}
+    else
+        # Create local checkout for daily branch
+        git checkout ${daily_remote}/${daily_br} -b ${daily_br}
+    fi
+    git cherry-pick ${local_cpick_commit}
+    git revert ${local_cpick_commit}
+    # switch back to current development branch
+    git checkout ${cur_br}
+}
 
-    while [ $# -ne 0 ]; do
-        cur="$1"; next="$2";
-        case "$cur" in
-            -h|--help) Usage ; exit 0;;
-            -v|--verbose) VERBOSITY=$((${VERBOSITY}+1));;
-            --) shift; break;;
-        esac
-        shift;
-    done
-
-	[ -n "$TEMP_D" ] ||
-        TEMP_D=$(mktemp -d "${TMPDIR:-/tmp}/${0##*/}.XXXXXX") ||
-		{ error "failed to make tempdir"; return 1; }
-	trap cleanup EXIT
-
-    [ $# -gt 0 ] || { bad_Usage "must provide commit-ish"; return; }
-
-    local r="" commit_in="$1" chash="" shash="" sname="" fname="" cur_br=""
+apply_one_cherry_pick() {
+    local r="" commit_in="$1" daily_remote="$2" chash="" shash="" sname=""
+    local fname="" cur_br=""
     cur_br=$(git rev-parse --abbrev-ref HEAD) ||
         { error "failed to get current branch"; return 1; }
     chash=$(git show --quiet "--pretty=format:%H" "${commit_in}") ||
@@ -172,7 +178,12 @@ main() {
     local message=""
     message=$(git_log_to_dch < "$fpath") ||
         { error "failed getting log entry from $fpath"; return 1; }
-    dch -i "cherry-pick $shash: $message"
+
+    if [ -z "${NEW_VERSION}" ]; then
+        dch -i "cherry-pick $shash: $message"
+    else
+        dch --newversion ${NEW_VERSION} -m "cherry-pick $shash: $message"
+    fi
 
     dch -e || {
         r=$?;
@@ -197,9 +208,45 @@ main() {
 
     git commit -m "$msg" "${commit_files[@]}" ||
         fail "failed to commit '$msg'"
+    local_cpickhash=$(git show --quiet "--pretty=format:%H") ||
+        { error "failed git show most recent commit"; return 1; }
 
     git commit -m "update changelog" debian/changelog ||
         fail "failed to commit update to debian changelog."
+    drop_cherry_pick_from_daily_branch ${local_cpickhash} ${daily_remote}
+
+    return 0
+}
+
+main() {
+    local short_opts="hd:v"
+    local long_opts="help,daily-remote:,verbose"
+    local getopt_out=""
+    getopt_out=$(getopt --name "${0##*/}" \
+        --options "${short_opts}" --long "${long_opts}" -- "$@") &&
+        eval set -- "${getopt_out}" ||
+        { bad_Usage; return; }
+
+    local cur="" next="" DAILY_REMOTE="origin"
+
+    while [ $# -ne 0 ]; do
+        cur="$1"; next="$2";
+        case "$cur" in
+            -h|--help) Usage ; exit 0;;
+            -d|--daily-remote) DAILY_REMOTE=${next}; shift;;
+            -v|--verbose) VERBOSITY=$((${VERBOSITY}+1)); set -x;;
+            --) shift; break;;
+        esac
+        shift;
+    done
+
+	[ -n "$TEMP_D" ] ||
+        TEMP_D=$(mktemp -d "${TMPDIR:-/tmp}/${0##*/}.XXXXXX") ||
+		{ error "failed to make tempdir"; return 1; }
+	trap cleanup EXIT
+
+    [ $# -gt 0 ] || { bad_Usage "must provide commit-ish"; return; }
+    apply_one_cherry_pick $1 ${DAILY_REMOTE}
 
     return 0
 }

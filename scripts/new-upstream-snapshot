@@ -300,7 +300,8 @@ main() {
         drops=""
         while read bname extra; do
             case "$bname" in
-                cpick-*)
+                fix-cpick-* | cpick-*)
+                    commit=${bname#fix-cpick-}
                     commit=${bname#cpick-}
                     commit=${commit%%-*}
                     echo "bname=$bname commit=${commit}" 1>&2

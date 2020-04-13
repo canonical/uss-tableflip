@@ -7,6 +7,8 @@ covers releases xenial+.
 Ubuntu packaging is stored as branches in the upstream cloud-init
 repo.  For example, see the ``ubuntu/devel``, ``ubuntu/xenial`` ... branches in the [upstream git repo](https://git.launchpad.net/cloud-init/).  Note that changes to the development release are always done in ubuntu/devel, not ubuntu/<release-name>.
 
+To suppport daily recipe builds, there are related ``ubuntu/daily/devel``, ``ubuntu/daily/xenial``, ... branches which are used to support our daily recipe package builds. The ubuntu/daily/$release branches are snapshots of ubuntu/$release branches with any cherry picks reverted so that our build recipe can merge tip of master into ubuntu/$release without merge conflicts.
+
 Note, that there is also the git-ubuntu cloud-init repo (aka "ubuntu server dev importer") at [lp:~usd-import-team/ubuntu/+source/cloud-init](https://code.launchpad.net/~usd-import-team/ubuntu/+source/cloud-init/+git/cloud-init).
 
 
@@ -32,7 +34,7 @@ It does almost everything needed with a few issues listed below.
 
 new-upstream-release does:
 
-  * merges master into the packaging branch so that history is maintained.
+  * merge master into the packaging branch so that history is maintained.
   * strip out core contributors from attribution in the debian changelog entries.
   * makes changes to debian/patches/series and drops any cherry-picks in that directory.
   * refreshes any patches in debian/patches/
@@ -115,46 +117,57 @@ Last, we need to push our tag above.
 
 
 ### cherry-picked changes ###
-This is generally not the mechanism that is preferred for any release supported by trunk.  It may be used in order to get a upload in *really quickly* for a hot fix.
+This is generally not the preferred mechanism for any release supported by trunk.  It is used either to get a upload in *really quickly* for a hot fix or during release **Feature Freeze** when only bugfixes or FeatureFreezeExceptions (FFEs) are accepted.  The tool for doing this is in ``uss-tableflip/scripts/cherry-pick``.  It takes as import a commit-ish that it will create a patch to apply the commitish via debian/patches/cpick-\*.
 
 #### Cherry-pick Process
-The tool for doing this is in ``uss-tableflip/scripts/cherry-pick``.  It takes as import a commit-ish that it will create a cherry-pick from.
+```
+  $ git fetch upstream; git checkout upstream/ubuntu/xenial -b ubuntu/xenial
+  $ cherry-pick <new_cherry_pick_commitish>
+  $ cherry-pick <commit_hash_2>
+  # Put up two PRs for review ubuntu/$release and ubuntu/daily/$release
+  $ git push <your_remote> ubuntu/$release
+  $ git push <your_remote> ubuntu/daily/$release
+```
 
-    ## just tag current so you have a revert point.
-    $ git tag --delete xx-current >/dev/null 2>&1; git tag xx-current
-    $ git checkout ubuntu/xenial
-    $ cherry-pick dc2bd79949
 
-The tool will:
+The `cherry-pick` tool will:
 
-  * add a new file to debian/patches/ named cpick-<commit>-topic that is dep-8 compatible
-  * add that patch to debian/patches/series
-  * verify that the patch applies (quilt push -a)
-  * give you a chance to edit formatted the debian/changelog entry
-  * prompt you to commit the change.
+  * add a new file to debian/patches/ named cpick-<commit>-topic that is
+    dep-8 compatible
+  * append file to debian/patches/series
+  * call quilt push -a
+  * prompt for commiting the debian/changelog
+  * checkout upstream/ubuntu/daily/$release branch
+  * git cherry-pick the commit which added the debian/patches/cpick-\* into the
+    ubuntu/daily/$release branch
+  * git revert the cpick commit from ubuntu/daily/$release
 
 From here you follow along with the snapshot upload process from
 [`dch --release` and beyond](#upstream-snapshot-process).
 
-**Note**: After doing uploading, in order to keep the daily builds working, we will then have to revert change.  This is because the recipe will try to build from trunk, and will fail to apply your cherry-picked patch.  This makes sense... it will grab trunk and then try to apply patches, but the cherry-picked patch will already exist.
 
-To do this:
+#### Fixing daily builds after cherry-pick
 
-    $ git checkout ubuntu/xenial  # or whatever release.
-    $ new-upstream-snapshot -v --update-patches-only
-    $ git push upstream HEAD
+After uploading a cherry-pick release, the daily builds will break
+unless we also revert the cherry-picks from the ubuntu/daily/$release branch.
+This is because the recipe will merge ubuntu/daily into master, and will get
+conflicts re-applying the cherry-picked patch because it already exists.
+The `cherry-pick` tool takes care of reverting any cherry picks from
+ubuntu/daily/$release branches. 
 
-That will produce 1 or 2 commits on the branch with summary like:
+**Note**: The daily build recipe assumes that all cherry-picks originate from
+the project's master branch. If cherry-picks are pulled from other branches,
+the author will need to rename that debian/patches/cpick-\* file to a
+different prefix, and avoid reverting that cpick from ubunut/daily/$release.
 
-  * refresh patches against master commit 2d6e4219
-  * drop cherry picks included in master commit 2d6e4219
 
-After doing that you can go to the recipe pages (see below) and click
-build-now.
+
+After both ubuntu/$release and ubuntu/daily/$release PRs are merged, go to the recipe pages (see below)
+and click build-now.
 
 ### Adding a quilt patch to debian/patches ###
 This is generally needed when we are disabling backported feature from tip
-in order to retain existing behavior on an older series.
+in order to retain existing behavior on a older series.
 
 The procedure is as follows:
 
@@ -196,18 +209,32 @@ If there were a number of releases that were missed you could do
 
 
 ## Daily packaging recipes and ppa ##
-We have daily packaging recipes that upload to the [daily ppa](https://code.launchpad.net/~cloud-init-dev/+archive/ubuntu/daily).  These build Ubuntu packaging on top of trunk.  This differs from trunk built for the given Ubuntu release because the Ubuntu release may have patches applied.
+We have daily packaging recipes which upload to the [daily ppa](https://code.launchpad.net/~cloud-init-dev/+archive/ubuntu/daily).  These build Ubuntu packaging on top of trunk.  This differs from trunk built for the given Ubuntu release because the Ubuntu release may have patches applied.
 
   * [xenial](https://code.launchpad.net/~cloud-init-dev/+recipe/cloud-init-daily-xenial)
-  * [artful](https://code.launchpad.net/~cloud-init-dev/+recipe/cloud-init-daily-artful)
   * [bionic](https://code.launchpad.net/~cloud-init-dev/+recipe/cloud-init-daily-bionic)
+  * [eoan](https://code.launchpad.net/~cloud-init-dev/+recipe/cloud-init-daily-eoan)
   * [devel](https://code.launchpad.net/~cloud-init-dev/+recipe/cloud-init-daily-devel)
 
 ### When the daily recipe build fails ###
 
-The daily recipe for each release checks out master and then merges the ubuntu/$release
+The daily recipe for each release checks out master and then merges the ubuntu/$release and finally merged ubuntu/daily/$release
 and builds the package from there.  From time to time, the patches in the
 ubuntu/$release branch need to be refreshed/updated as upstream/master changes.
+
+
+The example build recipe for each release follows this general format:
+
+Checkout cloud-init tip, merge ubuntu/$release which may have cpicks, merge ubuntu/daily/$release which revert debian/patches/cpick-\* because those cpicks are already included in tip.
+
+Ubuntu devel daily recipe:
+
+```
+# git-build-recipe format 0.4 deb-version {latest-tag}-{revno}-g{git-commit}-0ubuntu1+{revno:ubuntu-pkg}~trunk
+lp:cloud-init master
+merge ubuntu-pkg lp:cloud-init ubuntu/devel
+merge ubuntu-pkg-daily lp:cloud-init ubuntu/daily/devel
+```
 
 This is typically done during the new-upstream-release tool process, however,
 new commits to master can break the patches.  In particular, the
