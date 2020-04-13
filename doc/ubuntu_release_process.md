@@ -150,7 +150,7 @@ From here you follow along with the snapshot upload process from
 
 After uploading a cherry-pick release, the daily builds will break
 unless we also revert the cherry-picks from the ubuntu/daily/$release branch.
-This is because the recipe will merge ubuntu/daily into master, and will get
+This is because the recipe will merge ubuntu/$release into master, and will get
 conflicts re-applying the cherry-picked patch because it already exists.
 The `cherry-pick` tool takes care of reverting any cherry picks from
 ubuntu/daily/$release branches. 
@@ -162,12 +162,12 @@ different prefix, and avoid reverting that cpick from ubunut/daily/$release.
 
 
 
-After both ubuntu/$release and ubuntu/daily/$release PRs are merged, go to the recipe pages (see below)
-and click build-now.
+After both ubuntu/$release and ubuntu/daily/$release PRs are merged, go to the
+recipe pages (see below) and click build-now.
 
 ### Adding a quilt patch to debian/patches ###
 This is generally needed when we are disabling backported feature from tip
-in order to retain existing behavior on a older series.
+in order to retain existing behavior on an older series.
 
 The procedure is as follows:
 
