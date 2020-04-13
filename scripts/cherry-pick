@@ -90,6 +90,10 @@ git_log_to_dch() {
     fi
 }
 
+gitcmd() {
+    git "$@" || fail "Failed running git $@"
+}
+
 run_quilt() {
     local diffargs="-p ab --no-timestamps --no-index"
     QUILT_PATCHES="debian/patches" \
@@ -105,40 +109,36 @@ NEW_VERSION=""
 
 drop_cherry_pick_from_daily_branch() {
     local local_cpick_commit="$1" daily_remote="$2"
-    cur_br=$(git rev-parse --abbrev-ref HEAD) ||
-        { error "failed to get current branch name"; return 1; }
+    cur_br=$(gitcmd rev-parse --abbrev-ref HEAD)
     daily_br=${cur_br/ubuntu/ubuntu\/daily}
-    git fetch ${daily_remote}
+    gitcmd fetch ${daily_remote}
     echo "Backing out cherry-pick from ${daily_br} branch"
-    if [ $(git show-ref refs/heads/${daily_br}) ]; then
+    if [ ! -z "$(gitcmd show-ref refs/heads/${daily_br})" ]; then
         # Branch already exists so refresh it to remote/ubuntu/daily/<series>
-        git checkout ${daily_br}
-        git reset --hard ${daily_remote}/${daily_br}
+        gitcmd checkout ${daily_br}
+        gitcmd reset --hard ${daily_remote}/${daily_br}
     else
         # Create local checkout for daily branch
-        git checkout ${daily_remote}/${daily_br} -b ${daily_br}
+        gitcmd checkout ${daily_remote}/${daily_br} -b ${daily_br}
     fi
-    git cherry-pick ${local_cpick_commit}
-    git revert ${local_cpick_commit}
+    gitcmd cherry-pick ${local_cpick_commit}
+    gitcmd revert ${local_cpick_commit}
     # switch back to current development branch
-    git checkout ${cur_br}
+    gitcmd checkout ${cur_br}
 }
 
 apply_one_cherry_pick() {
     local r="" commit_in="$1" daily_remote="$2" chash="" shash="" sname=""
     local fname="" cur_br=""
-    cur_br=$(git rev-parse --abbrev-ref HEAD) ||
-        { error "failed to get current branch"; return 1; }
-    chash=$(git show --quiet "--pretty=format:%H" "${commit_in}") ||
-        { error "failed git show $commit_in"; return 1; }
+    cur_br=$(gitcmd rev-parse --abbrev-ref HEAD)
+    chash=$(gitcmd show --quiet "--pretty=format:%H" "${commit_in}")
 
     if git merge-base --is-ancestor "$chash" HEAD; then
         error "current branch '$cur_br' already contains $commit_in ($chash)"
         return 1
     fi
 
-    out=$(git show --abbrev=8 --quiet "--pretty=format:%h %f" "$chash") ||
-        { error "failed git show $chash"; return 1; }
+    out=$(gitcmd show --abbrev=8 --quiet "--pretty=format:%h %f" "$chash")
 
     shash=${out% *}
     sname=${out#* }
@@ -164,8 +164,7 @@ apply_one_cherry_pick() {
         fi
     fi
 
-    git format-patch --stdout -1 "$chash" > "$fpath" ||
-        { error "failed git format-patch -1 $chash > $fpath"; return 1; }
+    gitcmd format-patch --stdout -1 "$chash" > "$fpath"
 
     echo "$fname" >> "$series" ||
         { error "failed to write to $series"; return 1; }
@@ -193,7 +192,7 @@ apply_one_cherry_pick() {
 
     local commit_files=""
     commit_files=( "$series" "$fpath" )
-    git diff HEAD "${commit_files[@]}"
+    gitcmd diff HEAD "${commit_files[@]}"
 
     echo -n "Commit this change? (Y/n): "
     read answer || fail "failed to read answer"
@@ -203,16 +202,12 @@ apply_one_cherry_pick() {
 
     bugs=$(git_log_to_dch print_bugs < "$fpath")
     msg="cherry pick $shash${bugs:+${CR}${CR}LP: ${bugs}}"
-    git add "$series" "$fpath" ||
-        { error "failed to git add $series $fpath"; return 1; }
+    gitcmd add "$series" "$fpath"
 
-    git commit -m "$msg" "${commit_files[@]}" ||
-        fail "failed to commit '$msg'"
-    local_cpickhash=$(git show --quiet "--pretty=format:%H") ||
-        { error "failed git show most recent commit"; return 1; }
+    gitcmd commit -m "$msg" "${commit_files[@]}"
+    local_cpickhash=$(gitcmd show --quiet "--pretty=format:%H")
 
-    git commit -m "update changelog" debian/changelog ||
-        fail "failed to commit update to debian changelog."
+    gitcmd commit -m "update changelog" debian/changelog
     drop_cherry_pick_from_daily_branch ${local_cpickhash} ${daily_remote}
 
     return 0
@@ -234,7 +229,7 @@ main() {
         case "$cur" in
             -h|--help) Usage ; exit 0;;
             -d|--daily-remote) DAILY_REMOTE=${next}; shift;;
-            -v|--verbose) VERBOSITY=$((${VERBOSITY}+1)); set -x;;
+            -v|--verbose) VERBOSITY=$((${VERBOSITY}+1));;
             --) shift; break;;
         esac
         shift;

@@ -7,7 +7,14 @@ covers releases xenial+.
 Ubuntu packaging is stored as branches in the upstream cloud-init
 repo.  For example, see the ``ubuntu/devel``, ``ubuntu/xenial`` ... branches in the [upstream git repo](https://git.launchpad.net/cloud-init/).  Note that changes to the development release are always done in ubuntu/devel, not ubuntu/<release-name>.
 
-To suppport daily recipe builds, there are related ``ubuntu/daily/devel``, ``ubuntu/daily/xenial``, ... branches which are used to support our daily recipe package builds. The ubuntu/daily/$release branches are snapshots of ubuntu/$release branches with any cherry picks reverted so that our build recipe can merge tip of master into ubuntu/$release without merge conflicts.
+We build cloud-init master with each release branch to provide a daily
+cloud-init for each of the releases we support. Certain features and behavior
+changes are disabled in release branches. These release branch changes may
+prevent master from merging with the release branch and break the daily recipe
+builds.
+To resolve this conflict we provide fixes (reverting cherry picks or other
+feature redactions) to the release branches in a separate branch named
+ubuntu/daily/$release branch. For example ubuntu/daily/devel, ubuntu/daily/xenial.
 
 Note, that there is also the git-ubuntu cloud-init repo (aka "ubuntu server dev importer") at [lp:~usd-import-team/ubuntu/+source/cloud-init](https://code.launchpad.net/~usd-import-team/ubuntu/+source/cloud-init/+git/cloud-init).
 
@@ -121,7 +128,9 @@ This is generally not the preferred mechanism for any release supported by trunk
 
 #### Cherry-pick Process
 ```
-  $ git fetch upstream; git checkout upstream/ubuntu/xenial -b ubuntu/xenial
+  $ git fetch upstream
+  $ git checkout -b ubuntu/xenial upstream/ubuntu/xenial || git checkout ubuntu/xenial
+  $ git reset --hard upstream/ubuntu/xenial
   $ cherry-pick <new_cherry_pick_commitish>
   $ cherry-pick <commit_hash_2>
   # Put up two PRs for review ubuntu/$release and ubuntu/daily/$release
@@ -218,9 +227,10 @@ We have daily packaging recipes which upload to the [daily ppa](https://code.lau
 
 ### When the daily recipe build fails ###
 
-The daily recipe for each release checks out master and then merges the ubuntu/$release and finally merged ubuntu/daily/$release
-and builds the package from there.  From time to time, the patches in the
-ubuntu/$release branch need to be refreshed/updated as upstream/master changes.
+The daily recipe for each release checkouts master, merges both
+ubuntu/$release and ubuntu/daily/$release and builds the package from there.
+From time to time, the patches in the ubuntu/$release branch need to be
+refreshed as upstream/master changes.
 
 
 The example build recipe for each release follows this general format:
