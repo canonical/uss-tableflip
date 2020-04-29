@@ -15,6 +15,18 @@ if [ ! -e ChangeLog ]; then
   exit 1
 fi
 
+if [ "master" != "$(git branch --show-current)" ]; then
+  echo "Changing branch to master and git pull latest upstream (y/n) ?"
+  read RESP
+  if [ "$RESP" != "y" ]; then
+     echo "Please first change to master branch and pull upstream commits"
+     exit 1
+  fi
+  git checkout master
+  git pull
+fi
+
+
 RELEASE_TIME_SPAN=${RELEASE_TIME_SPAN/ ago/}
 NUM_CONTRIBUTORS=`git log $PREVIOUS_MAJOR_MINOR..HEAD --pretty="%aN" | sort -u | wc -l`
 NUM_DOMAINS=`git log $PREVIOUS_MAJOR_MINOR..HEAD --pretty="%aE" | sort -u | wc -l`
