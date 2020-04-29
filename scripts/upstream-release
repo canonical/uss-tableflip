@@ -23,8 +23,8 @@ if [ "master" != "$(git branch --show-current)" ]; then
      exit 1
   fi
   git checkout master
-  git pull
 fi
+git pull
 
 
 RELEASE_TIME_SPAN=${RELEASE_TIME_SPAN/ ago/}

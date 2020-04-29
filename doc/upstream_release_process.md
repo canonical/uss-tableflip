@@ -10,34 +10,37 @@ Examples:
 
  * [17.1](https://git.launchpad.net/cloud-init/commit/?id=17.1)
  * [17.2](https://git.launchpad.net/cloud-init/commit/?id=17.1)
+ * [20.1](https://git.launchpad.net/cloud-init/commit/?id=20.1)
 
-The commit content should consist of
+The commit content is obtained with the following:
 
- 1. cd to your root directory of the cloud-init repository
- 2. Run `./scripts/upstream-release` to get content for filing a bug and
-    sending a release mail  to the mailing list
- 3. File a bug with a subject like "Release 20.1" and content from
-    `upstream-release` script
+ 1. Clone latest cloud-init master branch and run `upstream-release`
+   ```bash
+   cd <cloud-init-root-dir>
+   git checkout master
+   git pull
+   uss-tableflip/scripts/upstream-release <NEW_major_minor> <PREV_major_minor>
+   ```
+ 2. You will be prompted with content to file a release process bug in launchpad
+   * Example Bugs:
+   [18.1](https://pad.lv/1751145),
+   [18.2](https://bugs.launchpad.net/bugs/1759318),
+   [19.4](https://pad.lv/1851428)
 
-    * Example Bugs: [18.1](https://pad.lv/1751145), [18.2](https://bugs.launchpad.net/bugs/1759318), [19.4](https://pad.lv/1851428)
+ 3. Enter the bug you created which will be used in the git commit message on
+    a new local **upstream/X.Y** branch.
 
- 4. Your console will also prompt you to perform the necessary changes
-    for an upstream version bump in cloud-init repo.
- 5. git commit -a.  The git commit message should look like others:
+    **Note:** If a branch other than master was used or master is out of date,
+     you will get strange entries in Changelog about cherry pick commits or
+     commits will not match tip of upstream/master.
 
-        release 19.4
+    **Note:**  At this point, running `tox` locally will fail, complaining
+     that your version does not match what git-describe does.  CI is
+     configured to work around this problem for release branches, so you
+     can disregard these local failures.  (We will create a tag later in
+     the process which fixes this issue.)
 
-        Bump the version in cloudinit/version.py to be 19.4 and update ChangeLog.
-
-        LP: #<YOUR_UPSTREAM_BUG>
-
-    N.B. At this point, running `tox` locally will fail, complaining
-    that your version does not match what git-describe does.  CI is
-    configured to work around this problem for release branches, so you
-    can disregard these local failures.  (We will create a tag later in
-    the process which fixes this issue.)
-
- 6. Push the branch up for review and create a pull request.  We will
+ 4. Push the branch up for review and create a pull request.  We will
     use that PR for some documentation on things that have been tested.
     Example merge proposals:
     [17.2](https://code.launchpad.net/~smoser/cloud-init/+git/cloud-init/+merge/335233),
