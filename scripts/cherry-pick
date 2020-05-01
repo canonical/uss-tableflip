@@ -116,13 +116,15 @@ drop_cherry_pick_from_daily_branch() {
     if [ ! -z "$(gitcmd show-ref refs/heads/${daily_br})" ]; then
         # Branch already exists so refresh it to remote/ubuntu/daily/<series>
         gitcmd checkout ${daily_br}
-        gitcmd reset --hard ${daily_remote}/${daily_br}
     else
         # Create local checkout for daily branch
         gitcmd checkout ${daily_remote}/${daily_br} -b ${daily_br}
     fi
-    gitcmd cherry-pick ${local_cpick_commit}
-    gitcmd revert ${local_cpick_commit}
+    gitcmd reset --hard ${cur_br}
+
+    for cpick in `tac ${CHERRY_PICK_DATA}`; do
+        gitcmd revert ${cpick}
+    done
     # switch back to current development branch
     gitcmd checkout ${cur_br}
 }
@@ -208,9 +210,12 @@ apply_one_cherry_pick() {
 
     gitcmd commit -m "$msg" "${commit_files[@]}"
     local_cpickhash=$(gitcmd show --quiet "--pretty=format:%H")
+    echo $local_cpickhash >> ${CHERRY_PICK_DATA}
+    gitcmd add ${CHERRY_PICK_DATA}
+    gitcmd commit -m "Append cpick to ${CHERRY_PICK_DATA}" ${CHERRY_PICK_DATA}
 
     gitcmd commit -m "update changelog" debian/changelog
-    drop_cherry_pick_from_daily_branch ${local_cpickhash} ${daily_remote}
+    drop_cherry_pick_from_daily_branch ${daily_remote}
 
     return 0
 }
