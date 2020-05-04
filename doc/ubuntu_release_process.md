@@ -7,14 +7,8 @@ covers releases xenial+.
 Ubuntu packaging is stored as branches in the upstream cloud-init
 repo.  For example, see the ``ubuntu/devel``, ``ubuntu/xenial`` ... branches in the [upstream git repo](https://git.launchpad.net/cloud-init/).  Note that changes to the development release are always done in ubuntu/devel, not ubuntu/<release-name>.
 
-We build cloud-init master with each release branch to provide a daily
-cloud-init for each of the releases we support. Certain features and behavior
-changes are disabled in release branches. These release branch changes may
-prevent master from merging with the release branch and break the daily recipe
-builds. To resolve this conflict we provide fixes (reverting cherry picks or
-other feature redactions) to the release branches in a separate branch named
-ubuntu/daily/$release branch. For example ubuntu/daily/devel,
-ubuntu/daily/xenial.
+Additionally there are ``ubuntu/daily/$release`` branches which are used for
+[daily packaging recipes](#daily-packaging-recipes-and-ppa).
 
 Note, that there is also the git-ubuntu cloud-init repo (aka "ubuntu server dev importer") at [lp:~usd-import-team/ubuntu/+source/cloud-init](https://code.launchpad.net/~usd-import-team/ubuntu/+source/cloud-init/+git/cloud-init).
 
@@ -43,7 +37,7 @@ new-upstream-release does:
 
   * merge master into the packaging branch so that history is maintained.
   * strip out core contributors from attribution in the debian changelog entries.
-  * makes changes to debian/patches/series and drops any cherry-picks in that directory.
+  * make changes to debian/patches/series and drop any cherry-picks in that directory.
   * refreshes any remaining patches in debian/patches/
 
   * opens $EDITOR with an option to edit debian/changelog.  In SRU, I will generally strip out commits that are not related to ubuntu, and also strip out or join any fix/revert/fixup commits into one.  Note this is a *ubuntu* changelog, so it makes sense that it only have Ubuntu specific things listed.
@@ -218,7 +212,12 @@ If there were a number of releases that were missed you could do
 
 
 ## Daily packaging recipes and ppa ##
-We have daily packaging recipes which upload to the [daily ppa](https://code.launchpad.net/~cloud-init-dev/+archive/ubuntu/daily).  These build Ubuntu packaging on top of trunk.  This differs from trunk built for the given Ubuntu release because the Ubuntu release may have patches applied.
+We have daily packaging recipes which upload to the [daily ppa](https://code.launchpad.net/~cloud-init-dev/+archive/ubuntu/daily).  These build Ubuntu packaging from tip of master with ubuntu/$release and ubuntu/daily/$release branches applied so the recipe can encorporate any $release-specific behavioral patches to
+tip of master before the build.
+
+The ubuntu/daily/$release branches are only present to revert any cherry-pick
+debian/patches/*cpick* files which are already included in tip of master.
+
 
   * [xenial](https://code.launchpad.net/~cloud-init-dev/+recipe/cloud-init-daily-xenial)
   * [bionic](https://code.launchpad.net/~cloud-init-dev/+recipe/cloud-init-daily-bionic)
@@ -232,15 +231,13 @@ ubuntu/$release and ubuntu/daily/$release and builds the package from there.
 From time to time, the patches in the ubuntu/$release branch need to be
 refreshed as upstream/master changes.
 
-
 The example build recipe for each release follows this general format:
-
-Checkout cloud-init tip, merge ubuntu/$release which may have cpicks, merge ubuntu/daily/$release which revert debian/patches/cpick-\* because those cpicks are already included in tip.
 
 Ubuntu devel daily recipe:
 
 ```
 # git-build-recipe format 0.4 deb-version {latest-tag}-{revno}-g{git-commit}-0ubuntu1+{revno:ubuntu-pkg}~trunk
+# Recipe doc: https://github.com/canonical/uss-tableflip/blob/master/doc/ubuntu_release_process.md
 lp:cloud-init master
 merge ubuntu-pkg lp:cloud-init ubuntu/devel
 merge ubuntu-pkg-daily lp:cloud-init ubuntu/daily/devel
