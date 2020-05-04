@@ -107,7 +107,7 @@ NEW_VERSION=""
 
 drop_cherry_pick_from_daily_branch() {
     local local_cpick_commit="$1" daily_remote="${2-origin}"
-    cur_br=$(git branch --show-current)
+    cur_br=$(gitcmd branch --show-current)
     daily_br=${cur_br/ubuntu/ubuntu\/daily}
     gitcmd fetch ${daily_remote}
     echo "Backing out cherry-pick from ${daily_br} branch"
@@ -128,7 +128,7 @@ drop_cherry_pick_from_daily_branch() {
 apply_one_cherry_pick() {
     local r="" commit_in="$1" daily_remote="$2" chash="" shash="" sname=""
     local fname="" cur_br=""
-    cur_br=$(gitcmd rev-parse --abbrev-ref HEAD)
+    cur_br=$(git branch --show-current)
     chash=$(gitcmd show --quiet "--pretty=format:%H" "${commit_in}")
 
     if git merge-base --is-ancestor "$chash" HEAD; then
