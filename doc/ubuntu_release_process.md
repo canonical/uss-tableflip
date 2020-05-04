@@ -5,7 +5,7 @@ covers releases xenial+.
 
 ## Ubuntu packaging branches ##
 Ubuntu packaging is stored as branches in the upstream cloud-init
-repo.  For example, see the ``ubuntu/devel``, ``ubuntu/xenial`` ... branches in the [upstream git repo](https://git.launchpad.net/cloud-init/).  Note that changes to the development release are always done in ubuntu/devel, not ubuntu/<release-name>.
+repo.  For example, see the ``ubuntu/devel``, ``ubuntu/xenial`` ... branches in the [upstream git repo](https://git.launchpad.net/cloud-init/).  Note that changes to the development release are always done in ubuntu/devel, not ubuntu/<release-name>. Each release branch: ``ubuntu/(devel|xenial|bionic|etc)...`` will contain a debian package directory and $release-specific patches in the debian/patches directory.
 
 Additionally there are ``ubuntu/daily/$release`` branches which are used for
 [daily packaging recipes](#daily-packaging-recipes-and-ppa).
@@ -23,7 +23,7 @@ We have high level paths for uploading:
 ### new upstream release/snapshot ###
 This is the *only* mechanism for development release uploads, and the *heavily preferred* mechanism for stable release updates (SRU).
 
-Our goal is (and trunk integration tests show) that cloud-init works with xenial and beyond.
+Our goal is (and master integration tests show) that cloud-init works with xenial and beyond.
 
 Things that need to be considered:
 
@@ -118,20 +118,31 @@ Last, we need to push our tag above.
 
 
 ### cherry-picked changes ###
-This is generally not the preferred mechanism for any release supported by trunk.  It is used either to get a upload in *really quickly* for a hot fix or during release **Feature Freeze** when only bugfixes or FeatureFreezeExceptions (FFEs) are accepted.  The tool for doing this is in ``uss-tableflip/scripts/cherry-pick``.  It takes as import a commit-ish that it will create a patch to apply the commitish via debian/patches/cpick-\*.
+This is generally not the preferred mechanism for any release supported by
+master.  It is used either to get a upload in *really quickly* for a hot fix
+or during release **Feature Freeze** when only bugfixes or
+FeatureFreezeExceptions (FFEs) are accepted.  The tool for doing this is
+``uss-tableflip/scripts/cherry-pick``.  It takes a commit-ish from which it
+will create a patch to apply the commitish via debian/patches/cpick-\*.
+
+N.B. The tool is named `cherry-pick` because it takes a git commit and applies
+it to the release branch, but it **does not** do so by performing a
+`git cherry-pick`.
 
 #### Cherry-pick Process
 ```
   $ git fetch upstream
-  $ git checkout -b ubuntu/xenial upstream/ubuntu/xenial || git checkout ubuntu/xenial
-  $ git reset --hard upstream/ubuntu/xenial
+  $ git checkout -b ubuntu/$release upstream/ubuntu/$release
+
+  # A git reset --hard will wipe out any changes to your local ubuntu/$release
+  $ git reset --hard upstream/ubuntu/$release
+
   $ cherry-pick <new_cherry_pick_commitish>
   $ cherry-pick <commit_hash_2>
   # Put up two PRs for review ubuntu/$release and ubuntu/daily/$release
   $ git push <your_remote> ubuntu/$release
   $ git push <your_remote> ubuntu/daily/$release
 ```
-
 
 The `cherry-pick` tool will:
 
@@ -154,19 +165,22 @@ From here you follow along with the snapshot upload process from
 After uploading a cherry-pick release, the daily builds will break
 unless we also revert the cherry-picks from the ubuntu/daily/$release branch.
 This is because the recipe will merge ubuntu/$release into master, and will get
-conflicts re-applying the cherry-picked patch because it already exists.
+conflicts applying the `cherry-pick`ed quilt patch during source package builds
+(because the commit that the patch represents is already in `master`).
 The `cherry-pick` tool takes care of reverting any cherry picks from
 ubuntu/daily/$release branches. 
 
 **Note**: The daily build recipe assumes that all cherry-picks originate from
-the project's master branch. If cherry-picks are pulled from other branches,
-the author will need to rename that debian/patches/cpick-\* file to a
-different prefix, and avoid reverting that cpick from ubunut/daily/$release.
+the project's master branch. Any run of `new-upstream-snapshot` will automatically delete any debian/patches/\*cpick\* files as it is assumed that all cpicks
+are already present upstream.
 
-
-
-After both ubuntu/$release and ubuntu/daily/$release PRs are merged, go to the
-recipe pages (see below) and click build-now.
+To fix the recipe builder:
+ * Obtain an Approve on ubuntu/$release and ubuntu/daily/$release in github
+ * git push upstream ubuntu/$release
+ * git push upstream ubuntu/daily/$release
+ * Once ubuntu/$release and ubuntu/daily/$release PRs show merged, activate
+   Canonical's VPN and rebuild the [Jenkins github sync job](https://jenkins.ubuntu.com/server/view/cloud-init,%20curtin,%20streams/job/cloud-init-github-mirror/) to sync tip of master to launchpad
+ * Go to the [daily packaging recipes](#daily-packaging-recipes-and-ppa) and click build-now.
 
 ### Adding a quilt patch to debian/patches ###
 This is generally needed when we are disabling backported feature from tip
@@ -221,7 +235,7 @@ debian/patches/*cpick* files which are already included in tip of master.
 
   * [xenial](https://code.launchpad.net/~cloud-init-dev/+recipe/cloud-init-daily-xenial)
   * [bionic](https://code.launchpad.net/~cloud-init-dev/+recipe/cloud-init-daily-bionic)
-  * [eoan](https://code.launchpad.net/~cloud-init-dev/+recipe/cloud-init-daily-eoan)
+  * [focal](https://code.launchpad.net/~cloud-init-dev/+recipe/cloud-init-daily-focal)
   * [devel](https://code.launchpad.net/~cloud-init-dev/+recipe/cloud-init-daily-devel)
 
 ### When the daily recipe build fails ###
@@ -289,6 +303,7 @@ To verify this fixes things for the daily build.
     $ git remote add local-ci-release /path/to/your/cloud-init/release/repo
     $ git fetch local-ci-release
     $ git merge local-ci-release/ubuntu/xenial
+    $ git merge local-ci-release/ubuntu/daily/xenial
     $ quilt push -a; quilt pop -a
 
 
