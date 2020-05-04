@@ -44,7 +44,7 @@ new-upstream-release does:
   * merge master into the packaging branch so that history is maintained.
   * strip out core contributors from attribution in the debian changelog entries.
   * makes changes to debian/patches/series and drops any cherry-picks in that directory.
-  * refreshes any patches in debian/patches/
+  * refreshes any remaining patches in debian/patches/
 
   * opens $EDITOR with an option to edit debian/changelog.  In SRU, I will generally strip out commits that are not related to ubuntu, and also strip out or join any fix/revert/fixup commits into one.  Note this is a *ubuntu* changelog, so it makes sense that it only have Ubuntu specific things listed.
 
@@ -71,8 +71,8 @@ The process goes like this:
 
     ## Your '$EDITOR' will be opened with the chance to change the
     ## changelog entry.
-    ##   FIXME: If this is a a SRU, then you should ideally edit the packaging
-    ##   portion of the version string to contain ~XX.YY.N
+    ##   FIXME: If this is the first SRU to a stable release, then you should
+    ##   edit the packaging portion of the version string to contain ~XX.YY.N
     ##   For example: 0.7.9-233-ge586fe35-0ubuntu1~16.04.1
     ##   It will **not** automatically add the '~16.04.1' portion.
     ##
@@ -147,9 +147,9 @@ The `cherry-pick` tool will:
   * call quilt push -a
   * prompt for commiting the debian/changelog
   * checkout upstream/ubuntu/daily/$release branch
-  * git cherry-pick the commit which added the debian/patches/cpick-\* into the
-    ubuntu/daily/$release branch
-  * git revert the cpick commit from ubuntu/daily/$release
+  * git reset --hard ubuntu/$release
+  * git revert commits which created or changed debian/patches/*cpick* files
+  * git checkout ubuntu/$release
 
 From here you follow along with the snapshot upload process from
 [`dch --release` and beyond](#upstream-snapshot-process).

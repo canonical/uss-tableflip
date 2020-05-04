@@ -10,8 +10,6 @@ fail() { [ $# -eq 0 ] || error "$@"; exit 1; }
 
 PKG_NAME=$(dpkg-parsechangelog --show-field Source) ||
     fail "failed to read Source from changelog"
-CHERRY_PICK_DATA=debian/${PKG_NAME}-cherry-picks
-RECIPE_FIX_COMMIT=debian/${PKG_NAME}-cherry-pick-recipe-fix
 
 Usage() {
     cat <<EOF
@@ -108,8 +106,8 @@ run_quilt() {
 NEW_VERSION=""
 
 drop_cherry_pick_from_daily_branch() {
-    local local_cpick_commit="$1" daily_remote="$2"
-    cur_br=$(gitcmd rev-parse --abbrev-ref HEAD)
+    local local_cpick_commit="$1" daily_remote="${2-origin}"
+    cur_br=$(git branch --show-current)
     daily_br=${cur_br/ubuntu/ubuntu\/daily}
     gitcmd fetch ${daily_remote}
     echo "Backing out cherry-pick from ${daily_br} branch"
@@ -122,9 +120,7 @@ drop_cherry_pick_from_daily_branch() {
     fi
     gitcmd reset --hard ${cur_br}
 
-    for cpick in `tac ${CHERRY_PICK_DATA}`; do
-        gitcmd revert ${cpick}
-    done
+    gitcmd log --oneline -- debian/patches/*cpick* | cut -d" " -f1 | xargs git revert
     # switch back to current development branch
     gitcmd checkout ${cur_br}
 }
@@ -209,11 +205,6 @@ apply_one_cherry_pick() {
     gitcmd add "$series" "$fpath"
 
     gitcmd commit -m "$msg" "${commit_files[@]}"
-    local_cpickhash=$(gitcmd show --quiet "--pretty=format:%H")
-    echo $local_cpickhash >> ${CHERRY_PICK_DATA}
-    gitcmd add ${CHERRY_PICK_DATA}
-    gitcmd commit -m "Append cpick to ${CHERRY_PICK_DATA}" ${CHERRY_PICK_DATA}
-
     gitcmd commit -m "update changelog" debian/changelog
     drop_cherry_pick_from_daily_branch ${daily_remote}
 
