@@ -33,7 +33,7 @@ It does almost everything needed with a few issues listed below.
 new-upstream-release does:
 
   * merges master into the packaging branch so that history is maintained.
-  * strip out coroe contributors from attribution in the debian changelog entries.
+  * strip out core contributors from attribution in the debian changelog entries.
   * makes changes to debian/patches/series and drops any cherry-picks in that directory.
   * refreshes any patches in debian/patches/
 
