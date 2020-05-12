@@ -156,6 +156,12 @@ build-now.
 This is generally needed when we are disabling backported feature from tip
 in order to retain existing behavior on an older series.
 
+**Note:** If adding a quilt patch to modify functionality introduced by
+a debian/patches/cpick-\* file, the new quilt patch needs the prefix
+fix-cpick-<previous_cpick_filename> because new-upstream-snapshot removes all
+cpick-\* and fix-cpick-\* files from debian/patches directory. Those patches
+are already considered "applied" in the snapshot we are syncing.
+
 The procedure is as follows:
 
  * quilt push -a                            # Apply existing patches in order
