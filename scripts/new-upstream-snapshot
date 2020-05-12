@@ -300,8 +300,9 @@ main() {
         drops=""
         while read bname extra; do
             case "$bname" in
-                cpick-*)
-                    commit=${bname#cpick-}
+                fix-cpick-* | cpick-*)
+                    commit=${bname#fix-cpick-}
+                    commit=${commit#cpick-}
                     commit=${commit%%-*}
                     echo "bname=$bname commit=${commit}" 1>&2
                     if git merge-base --is-ancestor "$commit" "$from_ref"; then
