@@ -37,13 +37,7 @@ drop_cherry_picks_from_daily_branch() {
 
     gitcmd fetch ${remote}
     echo "Backing out all debian/patches/*cpick* from ${daily_branch} branch"
-    if gitcmd branch | grep -q ${daily_branch}; then
-        gitcmd checkout ${daily_branch}
-    else
-        # Create local daily branch from current
-        gitcmd checkout ${source_branch} -b ${daily_branch}
-    fi
-    gitcmd reset --hard ${source_branch}
+    gitcmd checkout -B ${daily_branch} ${source_branch}
     gitcmd log --oneline -- debian/patches/*cpick* | cut -d" " -f1 | xargs git revert
     # switch back to current development branch
     cat <<EOF
