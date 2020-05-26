@@ -56,24 +56,10 @@ EOF
 }
 
 main() {
-    local short_opts="h"
-    local long_opts="help"
-    local getopt_out=""
-    getopt_out=$(getopt --name "${0##*/}" \
-        --options "${short_opts}" --long "${long_opts}" -- "$@") &&
-        eval set -- "${getopt_out}" ||
-        { Usage; return; }
-
-    local cur="" next="" release="_unset" remote="_unset"
-
-    while [ $# -ne 0 ]; do
-        cur="$1"; next="$2";
-        case "$cur" in
-            -h|--help) Usage ; exit 0;;
-            --) shift; break;;
-        esac
-        shift;
-    done
+    if [ "$1" = "--help" -o "$1" = "-h" ]; then
+        Usage
+        exit 0
+    fi
     [ $# -eq 2 ] || { bad_Usage "provide both <release> and <remote>"; return; }
     release=$1
     remote=$2
