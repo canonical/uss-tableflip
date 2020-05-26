@@ -151,7 +151,7 @@ To cherry-pick:
     $ git push upstream HEAD
 
     # create local ubuntu/daily/xenial branch with *cpick* reverts to fix daily
-    $ fix-daily-branch -s ubuntu/xenial -d ubuntu/daily/xenial
+    $ fix-daily-branch xenial upstream
     $ git push upstream ubuntu/daily/xenial  --force
 
 The `cherry-pick` will produce 1 or 2 commits on the branch with summary like:
