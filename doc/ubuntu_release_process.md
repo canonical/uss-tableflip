@@ -120,7 +120,7 @@ This is generally not the mechanism that is preferred for any release supported 
 #### Cherry-pick Process
 The tool for doing this is in ``uss-tableflip/scripts/cherry-pick``.  It takes as import a commit-ish that it will create a cherry-pick from.
 
-    $ git checkout origin/ubuntu/xenial -b ubuntu/xenial
+    $ git checkout ubuntu/xenial
     $ cherry-pick dc2bd79949
 
 The tool will:
