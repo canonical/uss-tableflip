@@ -120,14 +120,13 @@ This is generally not the mechanism that is preferred for any release supported 
 #### Cherry-pick Process
 The tool for doing this is in ``uss-tableflip/scripts/cherry-pick``.  It takes as import a commit-ish that it will create a cherry-pick from.
 
-    ## just tag current so you have a revert point.
-    $ git tag --delete xx-current >/dev/null 2>&1; git tag xx-current
-    $ git checkout ubuntu/xenial
+    $ git checkout origin/ubuntu/xenial -b ubuntu/xenial
     $ cherry-pick dc2bd79949
 
 The tool will:
 
-  * add a new file to debian/patches/ named cpick-<commit>-topic that is dep-8 compatible
+  * add a new file to debian/patches/ named cpick-<commit>-topic that is
+    dep-8 compatible
   * add that patch to debian/patches/series
   * verify that the patch applies (quilt push -a)
   * give you a chance to edit formatted the debian/changelog entry
@@ -136,21 +135,32 @@ The tool will:
 From here you follow along with the snapshot upload process from
 [`dch --release` and beyond](#upstream-snapshot-process).
 
-**Note**: After doing uploading, in order to keep the daily builds working, we will then have to revert change.  This is because the recipe will try to build from trunk, and will fail to apply your cherry-picked patch.  This makes sense... it will grab trunk and then try to apply patches, but the cherry-picked patch will already exist.
+**Note**: After uploading a cherry-pick quilt patch to ubuntu/$release, the
+script `scripts/fix-daily-branch` must be run to fix daily builds. It will
+create a local branch named ubuntu/daily/$release which will revert all
+quilt cpick files to allow daily recipe builds to pass.
 
-To do this:
+To cherry-pick:
 
     $ git checkout ubuntu/xenial  # or whatever release.
     $ new-upstream-snapshot -v --update-patches-only
+    $ fix-daily-recipe -s ubuntu/xenial -d ubuntu/daily/xenial
+    # Create a PR in github for merging <your_remote>/ubuntu/xenial into canonical/ubuntu/dail
+    # Once that PR is approved
     $ git push upstream HEAD
 
-That will produce 1 or 2 commits on the branch with summary like:
+    # create local ubuntu/daily/xenial branch with *cpick* reverts to fix daily
+    $ fix-daily-branch -s ubuntu/xenial -d ubuntu/daily/xenial
+    $ git push upstream ubuntu/daily/xenial  --force
+
+The `cherry-pick` will produce 1 or 2 commits on the branch with summary like:
 
   * refresh patches against master commit 2d6e4219
   * drop cherry picks included in master commit 2d6e4219
 
-After doing that you can go to the recipe pages (see below) and click
-build-now.
+The `fix-daily-branch` will create a local ubuntu/daily/xenial branch from
+the local ubuntu/xenial branch and revert all debian/patches/*cpick* commits
+
 
 ### Adding a quilt patch to debian/patches ###
 This is generally needed when we are disabling backported feature from tip
