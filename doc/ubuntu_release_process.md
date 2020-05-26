@@ -145,8 +145,9 @@ To cherry-pick:
     $ git checkout ubuntu/xenial  # or whatever release.
     $ new-upstream-snapshot -v --update-patches-only
     $ fix-daily-recipe -s ubuntu/xenial -d ubuntu/daily/xenial
-    # Create a PR in github for merging <your_remote>/ubuntu/xenial into canonical/ubuntu/dail
-    # Once that PR is approved
+    # Create a PR in github for merging <your_remote>/ubuntu/xenial into
+    # canonical/ubuntu/xenial
+    # Once that ubuntu/xenial PR is approved, push from git cmdline not Github
     $ git push upstream HEAD
 
     # create local ubuntu/daily/xenial branch with *cpick* reverts to fix daily

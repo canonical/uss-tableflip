@@ -15,26 +15,29 @@ gitcmd() {
 
 Usage() {
 cat <<EOF
-${0##*/}
+Usage: ${0##*/} release remote
 
-Create a daily_branch which reverts any debian/patches/*cpick* commits from
-source_branch.
+Create a daily branch which reverts any debian/patches/*cpick* commits from
+a ubuntu/release branch.
 
 options:
-   -h|--help                   show this message.
-   --source-branch          The local branch name from which to revert all
-                            debian/patches/*cpick* files. Default: ubuntu/devel.
-   --daily-branch           The local daily branch name to create which reverts
-                            debian/patches/*cpick* files. Default:
-                            ubuntu/daily/devel
+   -h|--help    show this message.
+   release      The Ubuntu release name. For example: xenial 
+   remote       The git remote from which to pull and push release
+                branches. For example: upstream
+
 EOF
 }
+bad_Usage() { Usage 1>&2; [ $# -eq 0 ] || error "$@"; return 1; }
 
 drop_cherry_picks_from_daily_branch() {
-    local source_branch="${1}" daily_branch="${2}" daily_remote="${3:-origin}"
-    gitcmd fetch ${daily_remote}
+    local release="${1}" remote="${2}"
+    local source_branch="${remote}/ubuntu/${release}"
+    local daily_branch="ubuntu/daily/${release}"
+
+    gitcmd fetch ${remote}
     echo "Backing out all debian/patches/*cpick* from ${daily_branch} branch"
-    if git branch | grep -q ${daily_branch}; then
+    if gitcmd branch | grep -q ${daily_branch}; then
         gitcmd checkout ${daily_branch}
     else
         # Create local daily branch from current
@@ -43,41 +46,39 @@ drop_cherry_picks_from_daily_branch() {
     gitcmd reset --hard ${source_branch}
     gitcmd log --oneline -- debian/patches/*cpick* | cut -d" " -f1 | xargs git revert
     # switch back to current development branch
-    gitcmd checkout ${source_branch}
     cat <<EOF
 To fix daily recipe builds perform the following:
 
-  # Verify local changes in $daily_branch versus $source_branch
-  git diff $daily_branch
-  git push $daily_remote $daily_branch
+    # Verify local changes in $daily_branch versus $source_branch
+    git diff ${source_branch}
+    git push ${remote} ${daily_branch}
 EOF
 }
 
 main() {
-    local short_opts="hd:s:r:"
-    local long_opts="help,daily-branch:,source_branch:,remote:"
+    local short_opts="h"
+    local long_opts="help"
     local getopt_out=""
     getopt_out=$(getopt --name "${0##*/}" \
         --options "${short_opts}" --long "${long_opts}" -- "$@") &&
         eval set -- "${getopt_out}" ||
         { Usage; return; }
 
-    local cur="" next="" daily_branch="ubuntu/daily/devel"
-    local source_branch="ubuntu/devel" remote="origin"
+    local cur="" next="" release="_unset" remote="_unset"
 
     while [ $# -ne 0 ]; do
         cur="$1"; next="$2";
         case "$cur" in
             -h|--help) Usage ; exit 0;;
-            -d|--daily-branch) daily_branch=$next; shift;;
-            -r|--remote) remote=$next; shift;;
-            -s|--source-branch) source_branch=$next; shift;;
             --) shift; break;;
         esac
         shift;
     done
+    [ $# -eq 2 ] || { bad_Usage "provide both <release> and <remote>"; return; }
+    release=$1
+    remote=$2
 
-    drop_cherry_picks_from_daily_branch $source_branch $daily_branch $remote
+    drop_cherry_picks_from_daily_branch $release $remote
 }
 
 main "$@"
