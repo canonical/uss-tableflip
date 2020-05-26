@@ -1,0 +1,66 @@
+#!/bin/bash
+
+# Fix daily build branches so daily build recipes by dropping all 'cherry-pick'
+# quilt patches applied to a given ubuntu/* release branch.
+#  Any *cpick* files in debian/patches are git revert'd in reverse order
+# so that the upstream commits the *cpick* file represent are able to apply.
+set -e
+
+error() { echo "$@" 1>&2; }
+fail() { [ $# -eq 0 ] || error "$@"; exit 1; }
+
+gitcmd() {
+    git "$@" || fail "Failed running git $@"
+}
+
+Usage() {
+cat <<EOF
+Usage: ${0##*/} release remote
+
+Create a daily branch which reverts any debian/patches/*cpick* commits from
+a ubuntu/release branch.
+
+options:
+   -h|--help    show this message.
+   release      The Ubuntu release name. For example: xenial 
+   remote       The git remote from which to pull and push release
+                branches. For example: upstream
+
+EOF
+}
+bad_Usage() { Usage 1>&2; [ $# -eq 0 ] || error "$@"; return 1; }
+
+drop_cherry_picks_from_daily_branch() {
+    local release="${1}" remote="${2}"
+    local source_branch="${remote}/ubuntu/${release}"
+    local daily_branch="ubuntu/daily/${release}"
+
+    gitcmd fetch ${remote}
+    echo "Backing out all debian/patches/*cpick* from ${daily_branch} branch"
+    gitcmd checkout -B ${daily_branch} ${source_branch}
+    gitcmd log --oneline -- debian/patches/*cpick* | cut -d" " -f1 | xargs git revert
+    # switch back to current development branch
+    cat <<EOF
+To fix daily recipe builds perform the following:
+
+    # Verify local changes in $daily_branch versus $source_branch
+    git diff ${source_branch}
+    git push ${remote} ${daily_branch}
+EOF
+}
+
+main() {
+    if [ "$1" = "--help" -o "$1" = "-h" ]; then
+        Usage
+        exit 0
+    fi
+    [ $# -eq 2 ] || { bad_Usage "provide both <release> and <remote>"; return; }
+    release=$1
+    remote=$2
+
+    drop_cherry_picks_from_daily_branch $release $remote
+}
+
+main "$@"
+
+# vi: ts=4 expandtab
