@@ -33,11 +33,11 @@ options:
                                   refreshing patches in debian/patches/
       --skip-release              Sync upstream commits, but avoid SRU_BUG
                                   checks as this release will not be published
-      --no-bugs)                  do not put bug refs (LP: #XXX) in changelog.
-   -v|--verbose)                  increase verbosity.
+      --sru-bug                   the bug number to add to the debian/changelog
+      --no-bugs                   do not put bug refs (LP: #XXX) in changelog.
+   -v|--verbose                  increase verbosity.
 EOF
 }
-
 
 env_quilt() {
     local diffargs="-p ab --no-timestamps --no-index"
@@ -163,7 +163,7 @@ is_merge_commit() {
 
 main() {
     local short_opts="hv"
-    local long_opts="help,bugs,update-patches-only,no-bugs,no-prompt,skip-branch-name-check,skip-release,sru-bug,verbose"
+    local long_opts="help,update-patches-only,no-bugs,skip-branch-name-check,skip-release,sru-bug,verbose"
     local getopt_out=""
     getopt_out=$(getopt --name "${0##*/}" \
         --options "${short_opts}" --long "${long_opts}" -- "$@") &&
