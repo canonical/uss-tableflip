@@ -1,0 +1,161 @@
+#!/bin/bash
+
+VERBOSITY=1
+
+error() { echo "$@" 1>&2; }
+fail() { [ $# -eq 0 ] || error "$@"; exit 1; }
+
+Usage() {
+    cat <<EOF
+Usage: ${0##*/} [ options ] dsc [arch [ release ] ]
+
+   dsc and is required, arch and release are optional with defaults
+
+   options:
+    -h | --help             display this message
+         --dry-run          only report what would be done
+         --no-arch-all      do not pass '--arch-all'
+EOF
+}
+
+bad_Usage() { Usage 1>&2; [ $# -eq 0 ] || error "$@"; exit 1; }
+
+debug() {
+    local level=${1}; shift;
+    [ "${level}" -gt "${VERBOSITY}" ] && return
+    error "${@}"
+}
+
+
+rel_from_changes() {
+    local cfile="$1" out=""
+    out=$(awk '$1 == "Distribution:" { print $2 }' "$cfile") &&
+            [ "$(echo $out | tr '[A-Z]' '[a-z]')" != "unreleased" ] &&
+            _RET="${out%-proposed}" || return 1
+}
+
+short_opts="hv"
+long_opts="help,dry-run,chroot:,no-arch-all,verbose"
+getopt_out=$(getopt --name "${0##*/}" \
+    --options "${short_opts}" --long "${long_opts}" -- "$@") &&
+    eval set -- "${getopt_out}" ||
+    bad_Usage
+
+def_rel=""
+uname_m=$(uname -m)
+case "${uname_m}" in
+    i?86) arch="i386";;
+    x86_64) arch="amd64";;
+    ppc64le) arch="ppc64el";;
+    *) arch="$uname_m";;
+esac
+dsc=""
+dry_run=0
+arch_all="--arch-all"
+rels=" $(ubuntu-distro-info --all | tr '\n' ' ') "
+ifile=""
+schanges=""
+sbuild="sbuild"
+chroot=""
+
+while [ $# -ne 0 ]; do
+    cur=${1}; next=${2};
+    case "$cur" in
+        -h|--help) Usage ; exit 0;;
+           --dry-run) dry_run=1;;
+           --no-arch-all) arch_all="";;
+           --chroot) chroot=$next; shift;;
+        -v|--verbose) VERBOSITY=$((${VERBOSITY}+1));;
+        --) shift; break;;
+    esac
+    shift;
+done
+
+for arg in "$@"; do
+    if [ "${rels#* ${arg} }" != "${rels}" ]; then
+        rel="$arg";
+        continue
+    fi
+    if command -v "sbuild-$arg"; then
+        # handle string like 'icehouse' that has a 'sbuild-icehouse'
+        sbuild="sbuild-$arg"
+        continue
+    fi
+    case "$arg" in
+        *.dsc) 
+            ifile="$arg"
+            dsc="$arg"
+            ;;
+        *_source.changes)
+            [ -f "$arg" ] || fail "changes file '$arg' does not exist"
+            ifile="$arg"
+            schanges="$arg"
+            tmp="${arg%_source.changes}.dsc"
+            if [ -z "$dsc" -a -f "$tmp" ]; then
+                error "changed ${arg} to ${tmp} as a dsc"
+                dsc="$tmp"
+            fi
+            ;;
+        i386|amd64) arch="$arg";;
+        *) fail "confused by $arg";;
+    esac
+done
+
+[ -n "$dsc" ] || { Usage 1>&2; fail "must give dsc"; }
+[ -f "$dsc" ] || fail "$dsc: not a file"
+
+if [ -z "$schanges" -a -f "${ifile%.dsc}_source.changes" ]; then
+    schanges="${ifile%.dsc}_source.changes"
+fi
+
+ubuntu_devel=$(ubuntu-distro-info --devel)
+
+if [ -z "$rel" -a -f "$schanges" ]; then
+    rel_from_changes "$schanges" && def_rel="${_RET}" &&
+        error "set default release to $def_rel from changes file $schanges"
+fi
+
+if [ -z "$def_rel" ]; then
+    def_rel=${ubuntu_devel}
+fi
+rel=${rel:-${def_rel}}
+arch=${arch:-amd64}
+
+extra=""
+if [ "${rel#*-}" != "$rel" ] &&
+    distro-info --all | grep -q "^${rel%-*}"; then
+    extra=${rel#*-}
+    rel=${rel%-*}
+    error "set rel to $rel, extra='$extra'"
+fi
+
+orig_src=$(awk \
+    '$1 ~ /^[a-f0-9]{32}$/ && $3 ~ /.orig.tar.gz$/ {print $3}' \
+    "$dsc")
+dsc_d=$(dirname "$dsc")
+if [ -f "$dsc_d/$orig_src" -o -z "$orig_src" ]; then
+    :
+elif [ -f "$dsc_d/build-area/$orig_src" ]; then
+    ln -f "build-area/$orig_src" "$dsc_d" ||
+        fail "failed to symlink to build-area for $orig_src";
+else
+    dlbase="https://launchpad.net/ubuntu/+archive/primary/+files/"
+    wget "$dlbase/${orig_src}" -O "$dsc_d/$orig_src.part" &&
+        mv "$dsc_d/$orig_src.part" "$dsc_d/$orig_src" ||
+        fail "failed to download from $dlbase/$orig_src"
+fi
+
+case "$rel" in
+    unstable)
+        rel=${ubuntu_devel}
+        [ -n "$rel" ] || fail "failed to get release to build with from $rel"
+        debug 1 "building 'unstable' on ubuntu-devel ($rel)"
+        ;;
+esac
+
+debug 0 "$sbuild --dist=${rel} --arch=${arch}${chroot:+ --chroot=$chroot} ${arch_all:+ ${arch_all}} $dsc"
+[ $dry_run -eq 0 ] || exit 0
+# --resolve-alternatives is used by the buildd systems
+exec $sbuild --resolve-alternatives ${chroot:+"--chroot=${chroot}"} "--dist=${rel}" "--arch=${arch}" ${arch_all} "$dsc"
+
+# vi: ts=4 expandtab
