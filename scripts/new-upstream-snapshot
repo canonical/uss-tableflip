@@ -247,9 +247,25 @@ main() {
         fail "failed to read Source from changelog"
     dist=$(dpkg-parsechangelog --show-field Distribution)
 
+    local prev_released_pkg_ver="" unreleased_changes="" prev_dist=""
+    if [ "$dist" = "UNRELEASED" ]; then
+        prev_released_pkg_ver=$(
+            dpkg-parsechangelog --offset 1 --count=1 --show-field Version)
+        unreleased_changes=$(
+            dpkg-parsechangelog --count=1 --show-field Changes | tail -n +4)
+        prev_dist=$(
+            dpkg-parsechangelog --offset 1 --count=1 --show-field Distribution)
+    else
+        prev_released_pkg_ver="${prev_pkg_ver}"
+        prev_dist="$dist"
+    fi
+
+    debug 1 "prev_released_pkg_ver=$prev_released_pkg_ver"
+    debug 1 "unreleased=${unreleased_changes}"
+
     # If we fail to find --series X it is because it is a devel release
     # so set sru_ver_suff empty because we don't provide suffix on devel
-    sru_ver_suff=$(distro-info --series ${cur_branch#ubuntu/} --release |
+    sru_ver_suff=$(distro-info --series ${prev_dist} --release |
                        awk '{printf("~%s.1", $1)}') || sru_ver_suff=""
 
     [ "${sru_ver_suff}" = "${prev_pkg_ver}" ] && sru_ver_suff=""
@@ -284,21 +300,6 @@ main() {
         exit 0
     fi
 
-    local prev_released_pkg_ver="" unreleased_changes="" prev_dist=""
-    if [ "$dist" = "UNRELEASED" ]; then
-        prev_released_pkg_ver=$(
-            dpkg-parsechangelog --offset 1 --count=1 --show-field Version)
-        unreleased_changes=$(
-            dpkg-parsechangelog --count=1 --show-field Changes | tail -n +4)
-        prev_dist=$(
-            dpkg-parsechangelog --offset 1 --count=1 --show-field Distribution)
-    else
-        prev_released_pkg_ver="${prev_pkg_ver}"
-        prev_dist="$dist"
-    fi
-
-    debug 1 "prev_released_pkg_ver=$prev_released_pkg_ver"
-    debug 1 "unreleased=${unreleased_changes}"
 
     local dpseries="debian/patches/series" drops=""
     local msg="" extra="" bname=""
