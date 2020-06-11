@@ -265,8 +265,13 @@ main() {
 
     # If we fail to find --series X it is because it is a devel release
     # so set sru_ver_suff empty because we don't provide suffix on devel
-    sru_ver_suff=$(distro-info --series ${prev_dist} --release |
-                       awk '{printf("~%s.1", $1)}') || sru_ver_suff=""
+    devel_dist=$(distro-info --devel) ||
+        fail "distro-info out of date: apt install distro-info"
+
+    if [ "${prev_dist}" != "${devel_dist}" ]; then
+        sru_ver_suff=$(distro-info --series ${prev_dist} --release |
+                           awk '{printf("~%s.1", $1)}') || sru_ver_suff=""
+    fi
 
     [ "${sru_ver_suff}" = "${prev_pkg_ver}" ] && sru_ver_suff=""
 
