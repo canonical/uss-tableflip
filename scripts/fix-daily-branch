@@ -38,15 +38,20 @@ drop_cherry_picks_from_daily_branch() {
     gitcmd fetch ${remote}
     echo "Backing out all debian/patches/*cpick* from ${daily_branch} branch"
     gitcmd checkout -B ${daily_branch} ${source_branch}
-    gitcmd log --oneline -- debian/patches/*cpick* | cut -d" " -f1 | xargs git revert
-    # switch back to current development branch
-    cat <<EOF
+    cpick_files=$( find debian/patches -name "*cpick*")
+    if [ -n "${cpick_files}" ]; then
+        gitcmd log --oneline -- ${cpick_files} | cut -d" " -f1 | xargs git revert
+        cat <<EOF
 To fix daily recipe builds perform the following:
 
     # Verify local changes in $daily_branch versus $source_branch
     git diff ${source_branch}
     git push ${remote} ${daily_branch}
 EOF
+    else
+        echo "No fix-daily-branch needed for ${daily_branch}."
+        echo "No debian/patches/*cpick* files present to revert" 
+    fi
 }
 
 main() {
