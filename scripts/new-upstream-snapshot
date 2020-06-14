@@ -35,6 +35,8 @@ options:
                                   refreshing patches in debian/patches/
       --skip-release              Sync upstream commits, but avoid SRU_BUG
                                   checks as this release will not be published
+      --target-release            Optionally override the Ubuntu release
+                                  detected from debian/changelog. Example: focal
       --sru-bug                   the bug number to add to the debian/changelog
       --no-bugs                   do not put bug refs (LP: #XXX) in changelog.
    -v|--verbose                  increase verbosity.
@@ -163,9 +165,36 @@ is_merge_commit() {
     [ $num -gt 1 ]
 }
 
+
+
+find_sru_ver_suff() {
+    # target_release is like 'bionic' or 'groovy'
+    local target_release="$1" devel_release=""
+
+    command -v ubuntu-distro-info > /dev/null 2>&1 ||
+        fail "Missing distro-info: apt-get install distro-info"
+
+    devel_release=$(ubuntu-distro-info --devel) ||
+        fail "could not get distro-info --devel"
+
+    if [ "${target_release}" = "${devel_release}" ]; then
+        # Don't provide suffix for devel release
+        echo ""
+        return 0
+    fi
+
+    if ! ubuntu-distro-info --supported | grep -q "^$target_release$"; then
+        fail "Unsuppported distro: $target_release"
+    fi
+
+    echo $(ubuntu-distro-info --series=${target_release} --release |
+                       awk '{printf("~%s.1", $1)}')
+    return 0
+}
+
 main() {
     local short_opts="hv"
-    local long_opts="help,update-patches-only,no-bugs,skip-branch-name-check,skip-release,sru-bug,verbose"
+    local long_opts="help,update-patches-only,no-bugs,skip-branch-name-check,skip-release,sru-bug,target-release:,verbose"
     local getopt_out=""
     getopt_out=$(getopt --name "${0##*/}" \
         --options "${short_opts}" --long "${long_opts}" -- "$@") &&
@@ -173,8 +202,7 @@ main() {
         { Usage; return; }
     local skip_branch_name_check="${SKIP_BRANCH_NAME_CHECK:-0}"
     local update_patches_only=false bug_refs_in_clog=true skip_release=false sru_bug_fillstr="SRU_BUG_NUMBER_HERE"
-
-    which distro-info || fail "Please apt-get install distro-info"
+    local target_release=""
 
     local cur="" next="" 
     while [ $# -ne 0 ]; do
@@ -183,6 +211,7 @@ main() {
             -h|--help) Usage ; exit 0;;
                --skip-branch-name-check) skip_branch_name_check=1;;
                --skip-release) skip_release=true;;
+               --target-release) target_release=$2; shift;;
                --update-patches-only) update_patches_only=true;;
                --sru-bug) sru_bug_fillstr=$3; shift;;
                --no-bugs) bug_refs_in_clog=false;;
@@ -226,14 +255,20 @@ main() {
     ORIG_TIP=$(git rev-parse HEAD) ||
         fail "failed to get current tip"
 
-    if [ "${skip_branch_name_check}" = "0" ]; then
+    if [ "${skip_branch_name_check}" = "0" -a -z "${target_release}" ]; then
         case "$cur_branch" in
             ubuntu/*) :;;
             *)
                 error "On branch '$cur_branch', expect to be on ubuntu/*"
-                error "Skip check with --skip-branch-name-check or"
-                error "  SKIP_BRANCH_NAME_CHECK=1"
-                fail;;
+
+                if [ "${cur_branch#ubuntu}" = "${cur_branch}" ]; then
+                    error "Either skip check with either:"
+                    error " --skip-branch-name-check,"
+                    error " SKIP_BRANCH_NAME_CHECK=1 or"
+                    error " --target-release=<release_name>"
+                    fail
+                fi
+                ;;
         esac
     fi
 
@@ -263,19 +298,14 @@ main() {
     debug 1 "prev_released_pkg_ver=$prev_released_pkg_ver"
     debug 1 "unreleased=${unreleased_changes}"
 
-    # If we fail to find --series X it is because it is a devel release
-    # so set sru_ver_suff empty because we don't provide suffix on devel
-    devel_dist=$(distro-info --devel) ||
-        fail "distro-info out of date: apt install distro-info"
 
-    if [ "${prev_dist}" != "${devel_dist}" ]; then
-        sru_ver_suff=$(distro-info --series ${prev_dist} --release |
-                           awk '{printf("~%s.1", $1)}') || sru_ver_suff=""
-    fi
 
-    [ "${sru_ver_suff}" = "${prev_pkg_ver}" ] && sru_ver_suff=""
+    local sru_bug_string="" skip_bugs="" sru_ver_suff=""
 
-    local sru_bug_string="" skip_bugs=""
+    # --target-release overrides detected prev_dist
+    [ -z "${target_release}" ] && target_release="${prev_dist}"
+    sru_ver_suff=$(find_sru_ver_suff "${target_release}")
+
     [ "${bug_refs_in_clog}" = "false" ] && skip_bugs="--skip-bugs"
     if [ -n "$sru_ver_suff" ]; then
         sru_bug_string="(LP: #$sru_bug_fillstr)"
@@ -490,7 +520,7 @@ main() {
         # with a message like: Uploads aren't permitted to pocket: proposed
         release_suffix="-proposed"
     else
-        prev_dist=${prev_dist%-proposed}
+        target_release=${target_release%-proposed}
     fi
     echo wrote new-upstream-changes.txt for $pkg_name version ${new_pkg_ver}.
     if [ "${skip_release}" = "true" ]; then
@@ -502,7 +532,7 @@ EOF
     else
         cat <<EOF
 release with:
-sed -i -e "1s/UNRELEASED/${prev_dist}${release_suffix}/" debian/changelog
+sed -i -e "1s/UNRELEASED/${target_release}${release_suffix}/" debian/changelog
 git commit -m "releasing $pkg_name version $new_pkg_ver" debian/changelog
 git tag $tag
 # optionally push your tag: git push <remote> $tag
