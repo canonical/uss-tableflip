@@ -223,9 +223,11 @@ We have daily packaging recipes that upload to the [daily ppa](https://code.laun
 
 ### When the daily recipe build fails ###
 
-The daily recipe for each release checks out master and then merges the ubuntu/$release
-and builds the package from there.  From time to time, the patches in the
-ubuntu/$release branch need to be refreshed/updated as upstream/master changes.
+The daily recipe for each release checks out master and then merges both
+ubuntu/$release and ubuntu/daily/$release branches and builds the package from
+there.  From time to time, the patches in the
+ubuntu/daily/$release branch need to be refreshed/updated as upstream/master
+changes.
 
 This is typically done during the new-upstream-release tool process, however,
 new commits to master can break the patches.  In particular, the
@@ -244,10 +246,14 @@ Do the following to fix the patch (Note: we need to check out the files
 from *before* the refactor, so we specify the previous commit by using
 the ^ suffix)
 
-    $ new-upstream-snapshot -v --skip-release
+    $ git checkout upstream/ubuntu/daily/$release
+    $ new-upstream-snapshot -v --update-patches
+    # quilt will fail here and drop you into a quilt shell "(refresh-fix)"
     $ (refresh-fix)(hostname) cloud-init % quilt push -f
     $ (refresh-fix)(hostname) cloud-init % git checkout f247dd20ea73f8e153936bee50c57dae9440ecf7^ cloudinit/config/tests/test_ubuntu_advantage.py
     $ (refresh-fix)(hostname) cloud-init % git checkout f247dd20ea73f8e153936bee50c57dae9440ecf7^ cloudinit/config/cc_ubuntu_advantage.py
+    # Apply any other manual changes required.
+    # See ua-subp.patch in [PR #435}(https://github.com/canonical/cloud-init/pull/435)
     $ (refresh-fix)(hostname) cloud-init % quilt refresh
     $ (refresh-fix)(hostname) cloud-init % exit 0
 
@@ -259,29 +265,23 @@ Revert your changes to the two files:
     $ git checkout HEAD cloudinit/config/cc_ubuntu_advantage.py
 
 
-At this point, we've refreshed the patch on this branch, copy out the patch
-for testing and re-use.
-
-    $ cp debian/patches/ubuntu-advantage-revert-tip.patch /tmp/$release-debian/patches/ubuntu-advantage-revert-tip.patch
-
 To verify this fixes things for the daily build.
 
-    $ mkdir /tmp/test-daily-recipe-xenial
-    $ cd /tmp/test-daily-recipe-xenial
-    $ git clone https://github.com/canonical/cloud-init.git
-    $ cd cloud-init
-    $ git remote add local-ci-release /path/to/your/cloud-init/release/repo
-    $ git fetch local-ci-release
-    $ git merge local-ci-release/ubuntu/xenial
-    $ quilt push -a; quilt pop -a
+    $ git checkout upstream/master -B master
+    $ git merge upstream/ubuntu/$release
+    $ git merge upstream/ubuntu/daily/$release
+    # Assert quilt patches apply and tox passes
+    $ quilt push -a
+    $ tox -p auto
+    $ quilt pop -a
 
 
 With the patch passing verification, push this branch up for review:
 
-    $ git push <user github repo> ubuntu/xenial::ubuntu/xenial-fix-daily-ppa-YYYYMMDD
+    $ git push <user github repo> ubuntu/daily/$release
 
-In the github UI, make sure the proposal is pointing to ubuntu/xenial rather
-than master.
+In the github UI, make sure the proposal is pointing to ubuntu/daily/$release
+rather than master.
 
 
 ## Links ##
