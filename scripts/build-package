@@ -133,7 +133,8 @@ main() {
     if [ "$native" = "true" ]; then
         error "Native package format."
     else
-        orig_tarball="${pkg_name}_${upstream_ver}.orig.tar.gz"
+        local upstream_no_epoch=${upstream_ver#*:}
+        orig_tarball="${pkg_name}_${upstream_no_epoch}.orig.tar.gz"
         error "pkg_name=$pkg_name pkg_ver=$pkg_ver upstream_ver=$upstream_ver orig_tarball=$orig_tarball"
         orig_tarball_fp=""
         for p in .. ../dl; do
