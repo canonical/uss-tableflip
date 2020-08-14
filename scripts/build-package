@@ -68,7 +68,7 @@ get_genchanges_version() {
     elif [ -n "$ga_version" ]; then
         _RET="-v${ga_version}"
     else
-        error "Failed to get version info for $pkg_name in " \
+        error "Failed to get version info for $pkg_name in" \
             "$updates_suite or $ga_suite."
         return 1
     fi
