@@ -187,6 +187,12 @@ run-container [options] source [cmd]
                              url can be git_repo@commitish to checkout commitish
       -D | --destroy         destroy the container after finishing.
            --install  PKGS   PKGS is a comma or space separated list of packages.
+           --push-file FILE  put FILE into the container before starting.
+                             if FILE has a ':', then it is assumed to be
+                             local-path:container-path. example:
+                               --push-file=./myscript:/usr/bin/helper
+                             if no container-path is provided, put file in
+                             /usr/local/bin
       -n | --name     NAME   create container named NAME.  default name is random.
 
 Examples:
@@ -199,7 +205,7 @@ EOF
 
 run_container() {
     local short_opts="a:DG:hn:v"
-    local long_opts="artifacts:,as-root,boot-wait:,copy-out:,destroy,git:,help,install:,name:,verbose"
+    local long_opts="artifacts:,as-root,boot-wait:,copy-out:,destroy,git:,help,install:,name:,push-file:,verbose"
     local getopt_out=""
     getopt_out=$(getopt --name "${FUNCNAME[0]}" \
         --options "${short_opts}" --long "${long_opts}" -- "$@") &&
@@ -209,7 +215,7 @@ run_container() {
     local cur="" next="" ret="" wtime="${DEFAULT_WAIT_MAX}"
     local name="" giturl="" install="" artifacts="artifacts/"
     local user="ci-user"
-    local -a copy_out=( ) cmd=( ) failures=( )
+    local -a copy_out=( ) cmd=( ) failures=( ) push_files=( )
     while [ $# -ne 0 ]; do
         cur="${1:-}"; next="${2:-}";
         case "$cur" in
@@ -222,6 +228,12 @@ run_container() {
             -D|--destroy) KEEP=false;;
                --install) install=$(echo "$install" "$next" | sed 's/,/ /g');;
             -n|--name) name="$next";;
+               --push-file)
+                   [ -f "${next%:*}" ] || {
+                       error "--push-file '${next%:*}' not a file"
+                       return 1
+                   }
+                   push_files[${#push_files[@]}]="$next";;
             -v|--verbose) VERBOSITY=$((VERBOSITY+1));;
             --) shift; break;;
         esac
@@ -248,11 +260,28 @@ run_container() {
         source="ubuntu-daily:${source}"
     fi
     local out=""
-    out=$(lxc launch "$source" "$name" 2>&1 </dev/null) || {
-        errorrc "failed lxc launch $source $name: $out";
+    out=$(lxc init "$source" "$name" 2>&1 </dev/null) || {
+        errorrc "failed lxc init $source $name: $out";
         return
     }
     CONTAINER="$name"
+
+    local target="" p="" push_bin_dir="/usr/local/bin"
+    for p in "${push_files[@]}"; do
+        case "$p" in
+            *:*) p=${p%%:*}; tp=${p#*:}; tp=/${tp#/};;
+            *) tp="${push_bin_dir}/$p";;
+        esac
+        lxc file push --create-dirs "$p" "$name$tp" || {
+            errorrc "failed to push $p -> $name$tp"
+            return 1
+        }
+    done
+
+    out=$(lxc start "$name" 2>&1 </dev/null) || {
+        errorrc "failed to start container $name: $out"
+        return
+    }
 
     local cflag="--container=$name"
     debug 1 "Waiting up to ${wtime}s for '$name' to boot."
