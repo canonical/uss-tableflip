@@ -125,13 +125,29 @@ main() {
     upstream_hash=${upstream_ver##*-g}
 
     local native=false
-    case "${pkg_ver}" in
-        *-*) :;;
-        *) error "Native package assumed."; native=true;;
-    esac
+    local dsf="debian/source/format"
+    if [ -f "$wtd/$dsf" ]; then
+        local fmt="" native3="3.0 (native)"
+        read fmt < "$wtd/$dsf"
+        case "$fmt" in
+            "$native3"|*native*)
+                debug 0 "package ${pkg_name} is native per $dsf"
+                native=true;;
+        esac
+    fi
+    if [ "$native" = "false" ]; then
+        case "${pkg_ver}" in
+            *-*) :;;
+            *) debug 0 "package ${pkg_name} is native per version ${pkg_ver}"
+                native=true;;
+        esac
+    fi
 
     if [ "$native" = "true" ]; then
-        error "Native package format."
+        # rename this dir from 'wtd' to <pkg>-<ver> as the top level dir
+        # gets used in the tarball.
+        mv "$wtd" "${TEMP_D}/$pkg_name-$pkg_ver"
+        wtd="${TEMP_D}/$pkg_name-$pkg_ver"
     else
         local upstream_no_epoch=${upstream_ver#*:}
         orig_tarball="${pkg_name}_${upstream_no_epoch}.orig.tar.gz"
@@ -166,8 +182,42 @@ main() {
                 fail "orig tarball not a file: $orig_tarball_fp"
             error "using orig tarball $orig_tarball_fp"
         fi
-        orig_tarball_fp=$(readlink -f "$orig_tarball_fp")
-        ln -s "$orig_tarball_fp" "$TEMP_D/${orig_tarball_fp##*/}"
+
+        local ofp_name
+        ofp_name=$(basename "$orig_tarball_fp")
+        orig_tarball_fp=$(readlink -f "$orig_tarball_fp") ||
+            fail "failed to get full path to $orig_tarball_fp"
+        ln -s "$orig_tarball_fp" "$TEMP_D/${ofp_name}"
+    fi
+
+    if [ "$native" != "true" ]; then
+        local debtar="${TEMP_D}/extra/debian.tar"
+        mkdir "${TEMP_D}/extra" || fail "failed mkdir ${TEMP_D}/extra"
+
+        # copy out debian dir.
+        tar -C "$wtd" -cf "${TEMP_D}/extra/debian.tar" debian/ ||
+            fail "failed to create tarball of debian."
+
+        # clean wtd completely and create empty dir.
+        rm -Rf "$wtd" ||
+            fail "failed removing $wtd"
+        mkdir "$wtd" ||
+            fail "failed creating $wtd"
+
+        # extract upstream tarball, remove it's debian dir, extract ours.
+        # not certain that removal is correct, may be correct to 
+        # just extract our debian over the top.
+        tar -C "$wtd" --strip-components=1 -xf "${orig_tarball_fp}" ||
+            fail "failed to extract $orig_tarball_fp in $wtd"
+        if [ -d "$wtd/debian" ]; then
+            debug 0 "Removing upstream's debian dir in favor of packaging."
+            rm -Rf "$wtd/debian" ||
+                fail "failed removing debian dir from upstream tarball."
+        fi
+        tar -C "$wtd" -xf "$debtar" ||
+            fail "failed extracting debian tarball in wordir"
+    else
+        rm -Rf "$wtd/.git" || fail "failed removing .git dir"
     fi
 
     # try to magically add '-v' if its not present.
@@ -181,7 +231,7 @@ main() {
     elif [ -n "${genchanges_v}" ]; then
         set -- "$@" ${genchanges_v}
     fi
-    ( cd "$wtd" && rm -Rf .git ) || fail "failed removing .git from work dir."
+
     debug 0 "building with:" "$@"
     ( cd "$wtd" && debuild "$@" ) || fail "FAILED: debuild $*"
 
