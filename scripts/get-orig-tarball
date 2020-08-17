@@ -1,0 +1,267 @@
+#!/bin/bash
+
+VERBOSITY=0
+TEMP_D=""
+FORMATS=".tar.gz .tar.xz .tar.bz2"
+DSC_BASE_URL="http://launchpad.net/ubuntu/+archive/primary/+files"
+
+error() { echo "$@" 1>&2; }
+fail() { [ $# -eq 0 ] || error "$@"; exit 1; }
+
+Usage() {
+    cat <<EOF
+Usage: ${0##*/} [ options ] [changelog [dir]]
+
+   changelog: the changelog to parse.
+   dir: place to put orig tarball. 
+        default: dirname(changelog)/../../
+
+   options:
+      -O | --overwrite: overwrite an existing file 
+EOF
+}
+
+for_Usage() {
+    cat <<EOF
+Usage: ${0##*/} for [ options ] pkg pkg-version [dir]
+
+   package: the source package
+   version: the version of the package
+   dir: place to put orig tarball.  default: .
+
+   options:
+      -O | --overwrite: overwrite an existing file 
+EOF
+}
+
+for_bad_Usage() { for_Usage 1>&2; [ $# -eq 0 ] || error "$@"; return 1; }
+
+bad_Usage() { Usage 1>&2; [ $# -eq 0 ] || error "$@"; return 1; }
+cleanup() {
+    [ -z "${TEMP_D}" -o ! -d "${TEMP_D}" ] || rm -Rf "${TEMP_D}"
+}
+
+debug() {
+    local level=${1}; shift;
+    [ "${level}" -gt "${VERBOSITY}" ] && return
+    error "${@}"
+}
+
+get_field() {
+    local clog="$1" field="$2" offset="$3" ret=""
+    local out=""
+    out=$(dpkg-parsechangelog \
+        ${offset:+"--offset=$offset"} --show-field "$field" --count=1) || {
+            ret=$?
+            error "failed reading '$field' from '$clog'"
+            return $ret
+        }
+    _RET="$out"
+}
+
+is_released() {
+    [ "$1" != "UNRELEASED" -a "$1" != "unreleased" ]
+}
+
+get_dsc_url() {
+    _RET="${DSC_BASE_URL}/${1}_${2}.dsc"
+}
+
+dir_has_orig() {
+    local dir="$1" src="$2" ver="$3" n="" ext=""
+    for ext in $FORMATS; do
+        n="${src}_${ver}.orig${ext}"
+        [ -f "$dir/$n" ] && _RET="$dir/$n" && return 0
+    done
+    return 1
+}
+
+for_main() {
+    local short_opts="hOv"
+    local long_opts="help,overwrite,verbose"
+    local getopt_out=""
+    getopt_out=$(getopt --name "${0##*/}" \
+        --options "${short_opts}" --long "${long_opts}" -- "$@") &&
+        eval set -- "${getopt_out}" ||
+        { for_bad_Usage; return; }
+
+    local cur="" next="" overwrite=false orig="" sdir="$PWD"
+    local odir="."
+    while [ $# -ne 0 ]; do
+        cur="$1"; next="$2";
+        case "$cur" in
+            -h|--help) for_Usage ; exit 0;;
+            -O|--overwrite) overwrite=true;;
+            -v|--verbose) VERBOSITY=$((VERBOSITY+1));;
+            --) shift; break;;
+        esac
+        shift;
+    done
+
+    local src="$1" ver="$2"
+    [ $# -eq 2 -o $# -eq 3 ] || {
+        for_bad_Usage "expected 2 or 3 args, got $#: $*";
+        return
+    }
+
+    if [ $# -ge 3 ]; then
+        odir="$3"
+        [ -d "$odir" ] || { error "$odir: not a directory"; return 1; }
+    else
+        odir=$PWD
+    fi
+
+    local pver=""
+
+    case "$ver" in
+       upstream-*) ver="${ver#upstream-}"; uver=$ver; pver="not-provided";;
+       *-*) 
+          uver=${ver%-*}
+          pver=${ver##*-};;
+       *) uver="$ver"; pver="not-provided";;
+    esac
+
+    if [ "$pver" = "not-provided" ]; then
+        debug 1 "downloading without a dsc, poking for $src and $ver"
+        local ext="" name="" tname=""
+        for ext in ${FORMATS}; do
+            name="${src}_${ver}.orig$ext"
+            tname="$name.tmp.$$"
+            wget "${DSC_BASE_URL}/$name" -O "$odir/$tname" &&
+                mv "$tname" "$odir/$name" &&
+                { error "wrote ${name} to $odir"; return 0; } ||
+                rm -f "$tname"
+        done
+        error "failed download of $src at $ver. tried orig formats $FORMATS"
+        return 1
+    else
+        debug 1 "src=$src ver=$ver uver=$uver pver=$pver"
+        dl_to_dir "$src" "$ver" "$odir" "$overwrite"
+    fi
+}
+
+main() {
+    local short_opts="hOv"
+    local long_opts="help,offset:,overwrite,unreleased,verbose"
+    local getopt_out=""
+    getopt_out=$(getopt --name "${0##*/}" \
+        --options "${short_opts}" --long "${long_opts}" -- "$@") &&
+        eval set -- "${getopt_out}" ||
+        { bad_Usage; return; }
+
+    local cur="" next="" overwrite=false orig="" sdir="$PWD" offset="0"
+    local changelog="debian/changelog" odir="" use_unreleased=false
+    while [ $# -ne 0 ]; do
+        cur="$1"; next="$2";
+        case "$cur" in
+            -h|--help) Usage ; exit 0;;
+            -O|--overwrite) overwrite=true;;
+               --offset) offset=$next; shift;;
+               --unreleased) unreleased=true;;
+            -v|--verbose) VERBOSITY=$((VERBOSITY+1));;
+            --) shift; break;;
+        esac
+        shift;
+    done
+
+    [ $# -lt 3 ] || {
+        bad_Usage "expected < 0, 1 or 2 args, got $#: $*";
+    }
+
+    if [ $# -ge 1 ]; then
+        changelog="$1"
+    fi
+    [ -f "$changelog" ] || {
+        error "$changelog: not a file."
+        return 1
+    }
+
+    if [ $# -ge 2 ]; then
+        odir="$2"
+        [ -d "$odir" ] || { error "$odir: not a directory"; return 1; }
+    else
+        odir=$(dirname "$changelog") &&
+            odir=$(cd "$odir/../.." && pwd) ||
+            { error "failed dirname for '$changelog'"; return 1; }
+    fi
+
+    local ver="" dist="UNRELEASED"
+    while :; do
+        get_field "$changelog" Version $offset && ver="$_RET" || return
+        get_field "$changelog" Distribution $offset && dist="$_RET" || return
+        get_field "$changelog" Source $offset && src="$_RET" || return
+        [ "$unreleased" = "true" ] && break
+        is_released "$dist" && break
+        offset=$(($offset+1))
+    done
+
+    # walk back through versions at the same upstream version as this.
+    while :; do
+        debug 1 "src=$src ver=$ver upstream=${ver%-*} package=${ver##*-}" \
+            "offset=$offset"
+        dl_to_dir "$src" "$ver" "$odir" "$overwrite" && return 0
+        get_field "$changelog" Version $((offset+1)) && nver="$_RET" || return
+        if [ "${nver%-*}" != "${ver%-*}" ]; then
+            error "Failed getting upstream tarball."
+            return
+        fi
+        offset=$((offset+1))
+        debug 1 "Failed getting at version $ver, trying at $nver"
+        ver=${nver}
+    done
+}
+
+dl_to_dir() {
+    local src="$1" ver="$2" odir="$3" overwrite=${4:-false} orig=""
+    local uver="${ver%-*}"
+    if dir_has_orig "$odir" "$src" "$uver"; then
+        orig=${_RET}
+        if ! $overwrite; then
+            error "orig tarball existed at $orig. --overwrite to overwrite."
+            return 0;
+        fi
+    fi
+
+    get_dsc_url "$src" "$ver" || return
+    dsc_url=$_RET
+    debug 1 "dsc_url=$dsc_url"
+
+    TEMP_D=$(mktemp -d "${TMPDIR:-/tmp}/${0##*/}.XXXXXX") ||
+        fail "failed to make tempdir"
+    trap cleanup EXIT
+
+    cd "$TEMP_D"
+    local vflag="--quiet"
+    if [ "$VERBOSITY" -ge 1 ]; then
+        vflag=""
+    fi
+    # unauthenticated is fine because we use https to launchpad
+    dget $vflag --allow-unauthenticated --download-only "$dsc_url" || {
+        error "failed: dget --download-only $dsc_url"
+        cd "$sdir"
+        return 1
+    }
+
+    dir_has_orig "$TEMP_D" "$src" "$uver" || {
+        error "dget succeeded, but no orig tarball found."
+        cat "$TEMP_D/${src}_${ver}.dsc" 1>&2
+        ls $TEMP_D 1>&2;
+        cd "$sdir"
+        return 1
+    }
+    orig="$_RET"
+
+    cd "$sdir"
+    mv "$_RET" "$odir/"
+    _RET="${odir}/${orig##*/}"
+    error "wrote $odir/${orig##*/}"
+}
+
+if [ "$1" = "for" ]; then
+    shift
+    for_main "$@"
+else
+    main "$@"
+fi
+
+# vi: ts=4 expandtab
