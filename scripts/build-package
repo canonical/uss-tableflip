@@ -205,8 +205,6 @@ main() {
             fail "failed creating $wtd"
 
         # extract upstream tarball, remove it's debian dir, extract ours.
-        # not certain that removal is correct, may be correct to 
-        # just extract our debian over the top.
         tar -C "$wtd" --strip-components=1 -xf "${orig_tarball_fp}" ||
             fail "failed to extract $orig_tarball_fp in $wtd"
         if [ -d "$wtd/debian" ]; then
