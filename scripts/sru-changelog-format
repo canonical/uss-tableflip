@@ -6,43 +6,43 @@ import re
 
 
 def get_parser():
-   parser = argparse.ArgumentParser()
-   parser.add_argument(
-       '-c', '--changelog', required=True, help='Changelog file to parse')
-   parser.add_argument(
-       '-n', '--num-sections', required=False, default=1, type=int,
-       dest='numSections',
-       help='Number of changelog sections to parse. Default: 1.')
-   parser.add_argument(
-       '-p', '--project-name', required=False, default='cloud-init', type=str,
-       dest='projectName',
-       help='Changelog file to parse')
-   parser.add_argument(
-       '-f', '--format', required=False, default='trello', 
-       choices=['trello', 'release-notes'],
-       help='Output format type. Default: trello.')
-   parser.add_argument(
-       '-a', '--all-changes', required=False, default=False,
-       action='store_true', dest='allChanges',
-       help=('Include all changes with the section. Default: limit entries to'
-             ' those containing bugs.'))
-   return parser
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        '-c', '--changelog', required=True, help='Changelog file to parse')
+    parser.add_argument(
+        '-n', '--num-sections', required=False, default=1, type=int,
+        dest='numSections',
+        help='Number of changelog sections to parse. Default: 1.')
+    parser.add_argument(
+        '-p', '--project-name', required=False, default='cloud-init', type=str,
+        dest='projectName',
+        help='Changelog file to parse')
+    parser.add_argument(
+        '-f', '--format', required=False, default='trello',
+        choices=['trello', 'release-notes'],
+        help='Output format type. Default: trello.')
+    parser.add_argument(
+        '-a', '--all-changes', required=False, default=False,
+        action='store_true', dest='allChanges',
+        help=('Include all changes with the section. Default: limit entries to'
+              ' those containing bugs.'))
+    return parser
 
 
 def main():
-  parser = get_parser()
-  args = parser.parse_args()
-  with open(args.changelog, 'rb') as stream:
-    content = stream.read()
+    parser = get_parser()
+    args = parser.parse_args()
+    with open(args.changelog, 'rb') as stream:
+        content = stream.read()
 
-  section_marker = '{projectName} ('.format(projectName=args.projectName)
-  section_count = 0
-  for item in re.split('[*-] ', content):
-    if section_marker in item:
-        section_count += 1
-        if section_count > args.numSections:
-            break
-        continue
+    section_marker = '{projectName} ('.format(projectName=args.projectName)
+    section_count = 0
+    for item in re.split('[*-] ', content):
+        if section_marker in item:
+            section_count += 1
+            if section_count > args.numSections:
+                break
+            continue
     # strip all whitespace/newlines and truncate end of section committer
     changelog_item = ' '.join([i for i in item.split() if i != '-'])
     m = re.match(r'.*\(LP: #(?P<bugs>[\d ,#]+)\).*', changelog_item)
@@ -62,6 +62,7 @@ def main():
 
     if bug_fmt or args.allChanges:
         print(output_tmpl.format(bug_fmt=bug_fmt, summary=summary))
+
 
 if __name__ == '__main__':
     main()
