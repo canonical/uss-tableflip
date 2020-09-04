@@ -2,7 +2,7 @@
 
 VERBOSITY=0
 TEMP_D=""
-COMMIT_URL=${COMMIT_URL:-https://git.launchpad.net/cloud-init/commit/?id=}
+COMMIT_URL=${COMMIT_URL:-https://github.com/canonical/cloud-init/commit/}
 
 FILTER_LIST=( "lp-to-git-user" "Merge pull request" "Merge branch" )
 
@@ -136,6 +136,14 @@ print_trello() {
         bug=${bug%,}
         buf="${buf:+${buf} }[${bug}](http://pad.lv/$bug)"
     done
+    if [ "${subject#*\(#}" = "$subject" ]; then
+       pr_num=""
+    else
+        # replace PR # with a markdown link
+        pr_num=${subject#*\(#}  # redact leading prefix before.*(#
+        pr_num=${pr_num%)}      # truncate trailing ) if present
+        subject=${subject/$pr_num/[${pr_num}](http://github.com/canonical/cloud-init/pull/${pr_num})}
+    fi
     buf="${buf:+${buf} }$subject"
     for filter in "${FILTER_LIST[@]}"; do
         if [[ "$subject" != "${subject/$filter//}" ]]; then
