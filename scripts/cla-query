@@ -1,4 +1,4 @@
-#!/usr/bin/python
+#!/usr/bin/python3
 """Lauchpad IDs to query to see if userid has signed CLA."""
 
 from launchpadlib.launchpad import Launchpad
