@@ -1,8 +1,7 @@
-#!/usr/bin/python
+#!/usr/bin/python3
 """Lauchpad IDs to query to see if userid has signed CLA."""
 
 from launchpadlib.launchpad import Launchpad
-from os.path import basename
 import sys
 from argparse import ArgumentParser
 
@@ -25,12 +24,10 @@ def main():
     print('Logging into Launchpad')
     lp = Launchpad.login_anonymously(
         "cla-validator", LP_INSTANCE)
-    cla_signed = set()
-    cla_notsigned = []
     member_names = set()
     for project_name in CLA_GROUPS:
-       proj = lp.projects(project_name)
-       member_names.update(set([m.name for m in proj.members]))
+        proj = lp.projects(project_name)
+        member_names.update(set([m.name for m in proj.members]))
     if args.lpid in member_names:
         print("%s signed the CLA" % args.lpid)
         sys.exit(0)
