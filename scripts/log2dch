@@ -160,7 +160,7 @@ print_dch() {
     #( for i in ${bugs}; do echo ${i%,}; done); return
     aname=${author% <*}
     case "$aname" in
-        Chad\ Smith|Ryan\ Harper|Daniel\ Watkins) aname="";;
+        Chad\ Smith|Daniel\ Watkins) aname="";;
     esac
     abugs="${aname:+ [${aname}]}${bugs:+ (LP: ${bugs})}"
     for filter in "${FILTER_LIST[@]}"; do
