@@ -411,7 +411,9 @@ main() {
 
     if [ "$update_patches_only" = "true" ]; then
         if [ -z "$drops" -a -z "$refreshed" ]; then
-            error "No patches updated. Nothing to commit."
+            error "No patches updated. Nothing to commit. restoring to $ORIG_TIP"
+            git reset --hard "$ORIG_TIP" ||
+                fail "failed to reset back to start commit $ORIG_TIP"
             return 0
         fi
 
