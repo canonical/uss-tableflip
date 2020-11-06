@@ -410,7 +410,7 @@ main() {
     fi
 
     if [ "$update_patches_only" = "true" ]; then
-        if [ -z "$drops" -o -z "$refreshed" ]; then
+        if [ -z "$drops" -a -z "$refreshed" ]; then
             error "No patches updated. Nothing to commit."
             return 0
         fi
