@@ -35,6 +35,9 @@ options:
                                   checks as this release will not be published
       --sru-bug                   the bug number to add to the debian/changelog
       --no-bugs                   do not put bug refs (LP: #XXX) in changelog.
+      --first-sru                 provide this flag when this is the first SRU
+                                  to a series. It will determine the right
+                                  version suffix, prompt for SRU bug.
    -v|--verbose                  increase verbosity.
 EOF
 }
@@ -163,14 +166,14 @@ is_merge_commit() {
 
 main() {
     local short_opts="hv"
-    local long_opts="help,update-patches-only,no-bugs,skip-branch-name-check,skip-release,sru-bug,verbose"
+    local long_opts="help,update-patches-only,no-bugs,first-sru,skip-branch-name-check,skip-release,sru-bug:,verbose"
     local getopt_out=""
     getopt_out=$(getopt --name "${0##*/}" \
         --options "${short_opts}" --long "${long_opts}" -- "$@") &&
         eval set -- "${getopt_out}" ||
         { Usage; return; }
     local skip_branch_name_check="${SKIP_BRANCH_NAME_CHECK:-0}"
-    local update_patches_only=false bug_refs_in_clog=true skip_release=false sru_bug_fillstr="SRU_BUG_NUMBER_HERE"
+    local update_patches_only=false first_sru=false bug_refs_in_clog=true skip_release=false sru_bug_fillstr="SRU_BUG_NUMBER_HERE"
 
     local cur="" next="" 
     while [ $# -ne 0 ]; do
@@ -180,13 +183,15 @@ main() {
                --skip-branch-name-check) skip_branch_name_check=1;;
                --skip-release) skip_release=true;;
                --update-patches-only) update_patches_only=true;;
-               --sru-bug) sru_bug_fillstr=$3; shift;;
+               --sru-bug) sru_bug_fillstr=$next; shift;;
                --no-bugs) bug_refs_in_clog=false;;
+               --first-sru) bug_refs_in_clog=false; first_sru=true;;
             -v|--verbose) VERBOSITY=$((${VERBOSITY}+1));;
             --) shift; break;;
         esac
         shift;
     done
+
 
     [ $# -eq 0 -o $# -eq 1 ] || {
         Usage "Got $# arguments. expected 0 or 1.";
@@ -243,10 +248,17 @@ main() {
         fail "failed to read Source from changelog"
     dist=$(dpkg-parsechangelog --show-field Distribution)
 
-    # if present, pull the '~16.04.x' off of the previous entry.
-    sru_ver_suff=$(echo "$prev_pkg_ver" |
-        sed 's,.*~\([0-9.]*\)[.][0-9]$,~\1.1,')
-    [ "${sru_ver_suff}" = "${prev_pkg_ver}" ] && sru_ver_suff=""
+
+    if [ "$first_sru" = "true" ]; then
+        command -v distro-info >/dev/null 2>&1 || fail "Install distro-info deb"
+        # get ~20.10.1 for latest --stable release
+        sru_ver_suff=$(distro-info --stable -r | awk '{printf "~%s.1", $1}')
+    else
+        # if present, pull the '~16.04.x' off of the previous entry.
+        sru_ver_suff=$(echo "$prev_pkg_ver" |
+            sed 's,.*~\([0-9.]*\)[.][0-9]$,~\1.1,')
+        [ "${sru_ver_suff}" = "${prev_pkg_ver}" ] && sru_ver_suff=""
+    fi
 
     local sru_bug_string="" skip_bugs=""
     [ "${bug_refs_in_clog}" = "false" ] && skip_bugs="--skip-bugs"
