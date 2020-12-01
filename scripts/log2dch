@@ -195,7 +195,13 @@ git_log_to_dch() {
         case "$line" in
             commit\ *)
                 if [ -n "$commit" ]; then
-	            $skip_bugs && bugs=""
+	            if [ $skip_bugs ]; then
+                       bugs=""  # Don't append bugs referenced in commit body
+
+                       # Replace "LP: #" with "LP:" if present in subject
+                       # to avoid trigging SRU validation of bugs
+                       subject=${subject/LP: #/LP:}
+                    fi
                     "$func" "$commit" "$subject" "$author" "$bugs"
                 fi
                 commit=${line#commit }
@@ -209,7 +215,13 @@ git_log_to_dch() {
         esac
     done
     if [ -n "$commit" ]; then
-	$skip_bugs && bugs=""
+	if [ $skip_bugs ]; then
+            bugs=""  # Don't append bugs referenced in commit body
+
+            # Replace "LP: #" with "LP:" if present in subject
+            # to avoid trigging SRU validation of bugs
+            subject=${subject/LP: #/LP:}
+        fi
         $func "$commit" "$subject" "$author" "$bugs"
     fi
 }
