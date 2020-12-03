@@ -3,6 +3,7 @@
 VERBOSITY=0
 TEMP_D=""
 COMMIT_URL=${COMMIT_URL:-https://github.com/canonical/cloud-init/commit/}
+BUG_URL=${BUG_URL:-https://pad.lv/}
 
 FILTER_LIST=( "lp-to-git-user" "Merge pull request" "Merge branch" )
 
@@ -25,6 +26,8 @@ Usage: ${0##*/} [ options ] [input-file]
       --hackmd          output markdown formated for hackmd.io
       --commit-url=URL  use a different commit url.
                         default=$COMMIT_URL
+      --bug-url=URL     use a different bug url.
+                        default=$BUG_URL
 
    Assuming git style log commit messages, this reads the makes the
    summary line into a debian/changelog style entry with author
@@ -101,15 +104,15 @@ bzr_log_to_dch() {
 
 
 print_hackmd() {
-    local commit="$1" subject="$2" author="$3" bugs="$4" aname="" abugs=""
-    local buf="" bug="" t=""
+    local commit="$1" subject="$2" author="$3" bugs="$4" bug_tracker="$5"
+    local aname="" abugs="" buf="" bug="" t=""
     local url="${COMMIT_URL}"
     t=${commit#????????}
     local bugmd="" pre=""
     for bug in ${bugs}; do
         bug=${bug%,}
         [ -z "$bugmd" ] && pre="LP: "
-        bugmd="${bugmd}[$pre${bug}](https://pad.lv/$bug),"
+        bugmd="${bugmd}[$pre${bug}](${BUG_URL}$bug),"
     done
     bugmd=${bugmd%,}
     t=${commit#????????}
@@ -127,14 +130,14 @@ print_hackmd() {
 }
 
 print_trello() {
-    local commit="$1" subject="$2" author="$3" bugs="$4" aname="" abugs=""
-    local buf="" bug="" t=""
+    local commit="$1" subject="$2" author="$3" bugs="$4" bug_tracker="$5"
+    local aname="" abugs="" buf="" bug="" t=""
     local url="${COMMIT_URL}"
     t=${commit#????????}
     buf="[${commit%$t}](${url}${commit%$t})"
     for bug in ${bugs}; do
         bug=${bug%,}
-        buf="${buf:+${buf} }[${bug}](http://pad.lv/$bug)"
+        buf="${buf:+${buf} }[${bug}](${BUG_URL}$bug)"
     done
     if [ "${subject#*\(#}" = "$subject" ]; then
        pr_num=""
@@ -154,15 +157,15 @@ print_trello() {
 }
 
 print_dch() {
-    local commit="$1" subject="$2" author="$3" bugs="$4" aname="" abugs=""
-    local indent="    - " indent2="      " ll=79
+    local commit="$1" subject="$2" author="$3" bugs="$4" bug_tracker="$5"
+    local aname="" abugs="" indent="    - " indent2="      " ll=79
     local i=""
     #( for i in ${bugs}; do echo ${i%,}; done); return
     aname=${author% <*}
     case "$aname" in
-        Chad\ Smith|Daniel\ Watkins) aname="";;
+        Chad\ Smith|Daniel\ Watkins|Lucas\ Moura|James\ Falcon) aname="";;
     esac
-    abugs="${aname:+ [${aname}]}${bugs:+ (LP: ${bugs})}"
+    abugs="${aname:+ [${aname}]}${bugs:+ (${bug_tracker}: ${bugs})}"
     for filter in "${FILTER_LIST[@]}"; do
         if [[ "$subject" != "${subject/$filter//}" ]]; then
             return  # skip echo because our filter string matched
@@ -190,19 +193,20 @@ git_log_to_dch() {
     local line="" commit="" bugs=""
     local func=${1:-print_dch}
     local skip_bugs=${2:-false}
+    local bug_tracker="LP"
     while :; do
         read line || break
         case "$line" in
             commit\ *)
                 if [ -n "$commit" ]; then
-	            if [ $skip_bugs ]; then
+	            if [ "${skip_bugs}" = "true" ]; then
                        bugs=""  # Don't append bugs referenced in commit body
 
                        # Replace "LP: #" with "LP:" if present in subject
                        # to avoid trigging SRU validation of bugs
                        subject=${subject/LP: #/LP:}
                     fi
-                    "$func" "$commit" "$subject" "$author" "$bugs"
+                    "$func" "$commit" "$subject" "$author" "$bugs" "$bug_tracker"
                 fi
                 commit=${line#commit }
                 bugs=""
@@ -211,18 +215,19 @@ git_log_to_dch() {
                 ;;
             Author:*) author="${line#Author: }";;
             LP:*) bugs="${bugs:+${bugs}, }${line#*: }";;
-            "") [ -z "$subject" ] && read subject;;
+            Fixes:*|Closes:*) bug_tracker="GH"; bugs="${bugs:+${bugs}, }${line#*: }";;
+            "") [ -z "$subject" ] && read -r subject;;
         esac
     done
     if [ -n "$commit" ]; then
-	if [ $skip_bugs ]; then
+	if [ "${skip_bugs}" = "true" ]; then
             bugs=""  # Don't append bugs referenced in commit body
 
             # Replace "LP: #" with "LP:" if present in subject
             # to avoid trigging SRU validation of bugs
             subject=${subject/LP: #/LP:}
         fi
-        $func "$commit" "$subject" "$author" "$bugs"
+        $func "$commit" "$subject" "$author" "$bugs" "$bug_tracker"
     fi
 }
 
@@ -233,7 +238,7 @@ assert_temp_d() {
 
 main() {
     local short_opts="ht:v"
-    local long_opts="commit-url:,hackmd,help,skip-bugs,trello,vcs:,verbose"
+    local long_opts="bug-url:,commit-url:,hackmd,help,skip-bugs,trello,vcs:,verbose"
     local getopt_out=""
     getopt_out=$(getopt --name "${0##*/}" \
         --options "${short_opts}" --long "${long_opts}" -- "$@") &&
@@ -250,6 +255,7 @@ main() {
                --trello) omode="trello";;
                --hackmd) omode="hackmd";;
                --commit-url) COMMIT_URL="$next";;
+               --bug-url) BUG_URL="$next";;
             -t|--vcs) vcs="$next";
                 case "$vcs" in
                     auto|git|bzr)
