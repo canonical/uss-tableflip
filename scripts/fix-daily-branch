@@ -8,6 +8,7 @@ set -e
 
 error() { echo "$@" 1>&2; }
 fail() { [ $# -eq 0 ] || error "$@"; exit 1; }
+log() { echo "== $@ =="; }
 
 gitcmd() {
     git "$@" || fail "Failed running git $@"
@@ -35,11 +36,18 @@ drop_cherry_picks_from_daily_branch() {
     local source_branch="${remote}/ubuntu/${release}"
     local daily_branch="ubuntu/daily/${release}"
 
+    log "Checking out and updating daily branch"
     gitcmd fetch ${remote}
-    echo "Backing out all debian/patches/*cpick* from ${daily_branch} branch"
-    gitcmd checkout -B ${daily_branch} ${source_branch}
+    gitcmd checkout ${daily_branch}
+    gitcmd pull ${remote} ${daily_branch}
+    old_daily_branch_head=$(git rev-parse HEAD)
+
+    log "Merging packaging branch (so we can revert patches from it)"
+    gitcmd merge -m "Merge $release packaging branch to daily branch" ${source_branch}
+
     cpick_files=$( find debian/patches -name "*cpick*")
     if [ -n "${cpick_files}" ]; then
+        log "Backing out all debian/patches/*cpick* from ${daily_branch} branch"
         gitcmd log --oneline -- ${cpick_files} | cut -d" " -f1 | xargs git revert
         cat <<EOF
 To fix daily recipe builds perform the following:
@@ -49,8 +57,8 @@ To fix daily recipe builds perform the following:
     git push ${remote} ${daily_branch}
 EOF
     else
-        echo "No fix-daily-branch needed for ${daily_branch}."
-        echo "No debian/patches/*cpick* files present to revert" 
+        log "No debian/patches/*cpick* files present; no reverts needed, undoing merge"
+        gitcmd reset --hard $old_daily_branch_head
     fi
 }
 
