@@ -96,7 +96,7 @@ for arg in "$@"; do
                 dsc="$tmp"
             fi
             ;;
-        i386|amd64) arch="$arg";;
+        i386|amd64|ppcel|riscv64|powerpc) arch="$arg";;
         *) fail "confused by $arg";;
     esac
 done
