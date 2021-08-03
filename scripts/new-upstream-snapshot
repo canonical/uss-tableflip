@@ -24,7 +24,7 @@ cat <<EOF
 ${0##*/} [commitish]
 
 update current branch with commitish.
-commitish defaults to 'master'
+commitish defaults to 'main'
 
 options:
    -h|--help                      show this message.
@@ -215,10 +215,10 @@ main() {
             error "To avoid this, provide commitish."
             return 1
         }
-        debug 0 "updating remote $remote for default commitish $remote/master."
+        debug 0 "updating remote $remote for default commitish $remote/main."
         git fetch "$remote" ||
             { error "failed 'git fetch $remote'"; return 1; }
-        from_ref="${remote}/master"
+        from_ref="${remote}/main"
     fi
 
     cur_branch=$(git rev-parse --abbrev-ref HEAD) ||
