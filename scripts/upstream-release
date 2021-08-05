@@ -15,14 +15,14 @@ if [ ! -e ChangeLog ]; then
   exit 1
 fi
 
-if [ "master" != "$(git branch --show-current)" ]; then
-  echo "Changing branch to master and git pull latest upstream (y/n) ?"
+if [ "main" != "$(git branch --show-current)" ]; then
+  echo "Changing branch to main and git pull latest upstream (y/n) ?"
   read RESP
   if [ "$RESP" != "y" ]; then
-     echo "Please first change to master branch and pull upstream commits"
+     echo "Please first change to main branch and pull upstream commits"
      exit 1
   fi
-  git checkout master
+  git checkout main
 fi
 git pull
 
@@ -59,10 +59,10 @@ Highlights:
 $CHANGELOG
 EOF
 
-echo "Refresh master and create a new release branch branch? (y/n)"
+echo "Refresh main and create a new release branch branch? (y/n)"
 read RESP
 if [ "$RESP" = "y" ]; then
-  git checkout master
+  git checkout main
   git pull
   git checkout -b upstream/$RELEASE_MAJOR_MINOR
   echo -e "$RELEASE_MAJOR_MINOR\n$CHANGELOG\n\n$(cat ChangeLog)" > ChangeLog

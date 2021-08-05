@@ -124,9 +124,9 @@ def get_parser():
         help='The lp_user we use for cloning upstream remote.')
     parser.add_argument(
         '--upstream-branch', required=False, dest='upstream',
-        default='origin/master',
+        default='origin/main',
         help=('The name of remote branch target into which we will merge.'
-              ' Default: origin/master'))
+              ' Default: origin/main'))
     parser.add_argument(
         '--skip', default=[],  choices=['bugs', 'publish', 'tests'],
         action='append',
@@ -253,7 +253,7 @@ def prompt_source_mp(source_mps):
 def git_remotes(upstream_remote, project):
     '''Return a tuple of remotes and remote-prefix expected for new remotes.
 
-    @param upstream_branch_path: String such as origin/master describing the
+    @param upstream_branch_path: String such as origin/main describing the
         local branch path representing the upstream remote into which we'll
         merge.
     @param project: The name of the project.
@@ -405,7 +405,7 @@ def main():
         os.chdir(repo_dir)
     else:
         os.chdir(repo_dir)
-        # Refresh local copy of upstream master
+        # Refresh local copy of upstream main
         subp(['git', 'checkout', upstream_branch])
         subp(['git', 'pull'])
     log('Cloned publishing content into: {_dir}'.format(_dir=repo_dir))
