@@ -141,7 +141,7 @@ $ git log <previous_version>..<version> | grep "^[ ]*LP:" | sort -u | awk -F 'LP
 ```
 
 ## Upload to ubuntu/devel
-See the SRU documentation
+TODO: link to SRU documentation
 
 ## Update COPR build cloud-init/el-testing repository with latest upstream release
  Build RPM with:
