@@ -128,14 +128,14 @@ There is a tool in
 [uss-tableflip](https://github.com/canonical/uss-tableflip/) called
 lp-bugs-released that makes this sane:
 ```bash
-$ ./lp-bugs-released <project> <version> <space separate list of bugs>
+$ ./lp-bugs-released <project> <version> <space separated list of bugs>
 ```
 Example:
 ```bash
 $ ./lp-bugs-release cloud-init 21.3 1867532 1911680 1925395 1931392 1931577 1932048 1940233 1940235 1940839
 ```
 
-To get the list of bug that have been fixed this release, use:
+To get the list of bugs that have been fixed this release, use:
 ```bash
 $ git log <previous_version>..<version> | grep "^[ ]*LP:" | sort -u | awk -F 'LP: #' '{printf $2 " "}'
 ```
