@@ -1,6 +1,8 @@
 This covers the cloud-init upstream release process.
 
-This document assumes the Canonical cloud-init remote is named `upstream` whereas your personal fork is named `origin`. For example,
+# Assumptions
+## cloud-init
+cloud-init is assumed to be cloned locally with the Canonical cloud-init remote named `upstream` and your personal fork named `origin`. For example,
 ```bash
 $ git remote -v
 origin	git@github.com:MyGithubName/cloud-init.git (fetch)
@@ -8,8 +10,11 @@ origin	git@github.com:MyGithubName/cloud-init.git (push)
 upstream	git@github.com:canonical/cloud-init.git (fetch)
 upstream	git@github.com:canonical/cloud-init.git (push)
 ```
-
 Adjust any references to `upstream` and `origin` accordingly if yours are different.
+
+## Tools on path
+Some scripts referenced in this guide invoke other tools assumed to be on the PATH, so add `uss-tableflip/scripts` to your PATH.
+Additionally, the `lptools` package should be installed. Use `apt` to install it.
 
 # Pre-release
 ## Send pre-release email to mailing list
@@ -27,7 +32,6 @@ Start creating a process bug in the cloud-init project that captures the new rel
 Use the `upstream-release` script (described in the next section) to generate the bug contents for you.
 
 See [previous release bugs in Launchpad](https://bugs.launchpad.net/cloud-init/+bugs?field.searchtext=Release&orderby=-datecreated&search=Search&field.status%3Alist=FIXRELEASED&field.importance%3Alist=UNDECIDED).
-
 
 ## Create upstream-release branch
 **SAVE ALL LOCAL CHANGES TO A BRANCH**, then
@@ -85,7 +89,6 @@ $ gpg --sign --armor --detach-sig cloud-init-<version>.tar.gz
 ## Create release in Launchpad
 Example of a finished release: https://launchpad.net/cloud-init/trunk/21.3
 ### Option 1: Script
-* Install the lptools package through apt
 * Copy the changelog (for *just* this release) to a file called 'changelog-file'
 * Copy the release notes (not including changelog) from the launchpad bug to a file called 'releasenotes-file'
 ```bash
