@@ -124,24 +124,23 @@ Once we have created our release, we should create the milestone for the next re
 * Set `'Release <version>'` as the description
 * Click 'Publish release'
 
-## Close bugs.
+## Close bugs
 Any Launchdpad bugs that were listed in the git commit messages from this release should be marked as 'fix-released' now.
 
-There is a tool in
-[uss-tableflip](https://github.com/canonical/uss-tableflip/) called
-lp-bugs-released that makes this sane:
+First, get the list of bugs that been fixed this release:
+```bash
+$ git log <previous_version>..<version> | grep "^[ ]*LP:" | sort -u | awk -F 'LP: #' '{printf $2 " "}'
+```
+
+Next, use the uss-tableflip script called lp-bugs-released to close the bugs:
 ```bash
 $ ./lp-bugs-released <project> <version> <space separated list of bugs>
 ```
 Example:
 ```bash
-$ ./lp-bugs-release cloud-init 21.3 1867532 1911680 1925395 1931392 1931577 1932048 1940233 1940235 1940839
+$ ./lp-bugs-released cloud-init 21.3 1867532 1911680 1925395 1931392 1931577 1932048 1940233 1940235 1940839
 ```
 
-To get the list of bugs that have been fixed this release, use:
-```bash
-$ git log <previous_version>..<version> | grep "^[ ]*LP:" | sort -u | awk -F 'LP: #' '{printf $2 " "}'
-```
 
 ## Upload to ubuntu/devel
 TODO: link to SRU documentation
