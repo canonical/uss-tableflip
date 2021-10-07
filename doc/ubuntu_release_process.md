@@ -102,7 +102,7 @@ The tool that I use to do this is [build-package](../scripts/build-package).
 
 I then will sbuild the binary and then dput the result.
 
-    $ sbuild --dist=xenial --arch=amd64  --arch-all ../out/cloud-init_18.2-4-g05926e48
+    $ sbuild --dist=xenial --arch=amd64  --arch-all ../out/cloud-init_18.2-4-g05926e48-ubuntu1~16.04.1.dsc
     $ dput ubuntu ../out/cloud-init_18.2-4-g05926e48-0ubuntu1~16.04.1.changes
 
 
@@ -114,7 +114,7 @@ For SRUs don't forget to dput into the [cloud-init proposed ppa](https://launchp
 Last, we need to push our tag above now that upload succeeded.
 
     $ PKG_VERSION=$(dpkg-parsechangelog --show-field Version)
-    $ TAG=$(echo "ubuntu/$version" | tr '~' '_')
+    $ TAG=$(echo "ubuntu/$PKG_VERSION" | tr '~' '_')
     $ git tag "$TAG"
     $ git push upstream HEAD "$TAG"
 
