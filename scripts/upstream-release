@@ -65,7 +65,7 @@ if [ "$RESP" = "y" ]; then
   git checkout main
   git pull
   git checkout -b upstream/$RELEASE_MAJOR_MINOR
-  echo -e "$RELEASE_MAJOR_MINOR\n$CHANGELOG\n\n$(cat ChangeLog)" > ChangeLog
+  printf "%s\n%s\n\n%s\n" "$RELEASE_MAJOR_MINOR" "$CHANGELOG" "$(cat ChangeLog)" > ChangeLog
   sed -i "s/$PREVIOUS_MAJOR_MINOR/$RELEASE_MAJOR_MINOR/" cloudinit/version.py
   git diff
   echo "Enter the bug ID that was created for this upstream release "
