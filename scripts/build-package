@@ -4,6 +4,7 @@
 VERBOSITY=0
 TEMP_D=""
 START_D="$PWD"
+FORMATS=".tar.gz .tar.xz .tar.bz2"
 
 cleanup(){
     [ ! -d "$TEMP_D" ] || rm -Rf "$TEMP_D";
@@ -30,6 +31,30 @@ debug() {
     local level=${1}; shift;
     [ "${level}" -gt "${VERBOSITY}" ] && return
     error "${@}"
+}
+
+find_orig() {
+    local src="$1" ver="$2" dir="" n="" ext="" nver=""
+    shift 2
+    nver=$(no_epoch "$ver")
+    for dir in "$@"; do
+        for ext in $FORMATS; do
+            n="${src}_${nver}.orig${ext}"
+            [ -f "$dir/$n" ] && _RET="$dir/$n" &&
+                echo "$dir/$n" && return 0
+        done
+    done
+    return 1
+}
+
+# no_epoch(version): drop a leading epoch from a version
+#   no_epoch(1:15.0+dfsg1-1ubuntu2.1) = 15.0+dfsg1-1ubuntu2.1
+#   no_epoch("1.0") = "1.0"
+no_epoch() {
+    case "$1" in
+        [0-9]:*|[0-9][0-9]:*) echo "${1#*:}";;
+        *) echo "$1"
+    esac
 }
 
 get_genchanges_version() {
@@ -149,14 +174,9 @@ main() {
         mv "$wtd" "${TEMP_D}/$pkg_name-$pkg_ver"
         wtd="${TEMP_D}/$pkg_name-$pkg_ver"
     else
-        local upstream_no_epoch=${upstream_ver#*:}
-        orig_tarball="${pkg_name}_${upstream_no_epoch}.orig.tar.gz"
-        error "pkg_name=$pkg_name pkg_ver=$pkg_ver upstream_ver=$upstream_ver orig_tarball=$orig_tarball"
-        orig_tarball_fp=""
-        for p in .. ../dl; do
-            [ -e "$p/$orig_tarball" ] &&
-                orig_tarball_fp="$p/$orig_tarball" && break
-        done
+        error "pkg_name=$pkg_name pkg_ver=$pkg_ver upstream_ver=$upstream_ver"
+        local orig_tarball_fp="" orig_tarball_fp=""
+        orig_tarball_fp=$(find_orig "${pkg_name}" "${upstream_ver}" .. ../dl)
         if [ -n "$orig_tarball_fp" ]; then
             error "Using existing orig tarball in $orig_tarball_fp"
         elif [ -x tools/make-tarball ]; then
@@ -165,6 +185,7 @@ main() {
                    fail "failed to create ../dl from $PWD"
                 error "created ../dl from $PWD for orig tarballs."
             fi
+            orig_tarball="${pkg_name}_$(no_epoch "${upstream_ver}").orig.tar.gz"
             orig_tarball_fp="../dl/$orig_tarball"
             error "creating $orig_tarball_fp using" \
                 "make-tarball --output=$orig_tarball_fp $upstream_hash"
@@ -173,9 +194,7 @@ main() {
         else
             get-orig-tarball -v ${offset:+--offset=${offset}} ||
                 fail "failed to get orig tarball for $pkg_name at $pkg_ver"
-            orig_tarball_fp=$(for f in \
-                ../${pkg_name}_${upstream_ver}.orig.*; do [ -f "$f" ] &&
-                echo "$f"; done)
+            orig_tarball_fp=$(find_orig "${pkg_name}" "${upstream_ver}" ..)
             [ -n "$orig_tarball_fp" ] ||
                 fail "did not get a tarball with get-orig-tarball"
             [ -f "$orig_tarball_fp" ] ||

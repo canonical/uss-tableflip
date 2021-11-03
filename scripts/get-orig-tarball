@@ -64,16 +64,33 @@ is_released() {
 }
 
 get_dsc_url() {
-    _RET="${DSC_BASE_URL}/${1}_${2}.dsc"
+    local name="$1" ver="$2"
+    ver=$(no_epoch "$ver")
+    _RET="${DSC_BASE_URL}/${name}_${ver}.dsc"
 }
 
-dir_has_orig() {
-    local dir="$1" src="$2" ver="$3" n="" ext=""
-    for ext in $FORMATS; do
-        n="${src}_${ver}.orig${ext}"
-        [ -f "$dir/$n" ] && _RET="$dir/$n" && return 0
+find_orig() {
+    local src="$1" ver="$2" dir="" n="" ext="" nver=""
+    shift 2
+    nver=$(no_epoch "$ver")
+    for dir in "$@"; do
+        for ext in $FORMATS; do
+            n="${src}_${nver}.orig${ext}"
+            [ -f "$dir/$n" ] && _RET="$dir/$n" &&
+                echo "$dir/$n" && return 0
+        done
     done
     return 1
+}
+
+# no_epoch(version): drop a leading epoch from a version
+#   no_epoch(1:15.0+dfsg1-1ubuntu2.1) = 15.0+dfsg1-1ubuntu2.1
+#   no_epoch("1.0") = "1.0"
+no_epoch() {
+    case "$1" in
+        [0-9]:*|[0-9][0-9]:*) echo "${1#*:}";;
+        *) echo "$1"
+    esac
 }
 
 for_main() {
@@ -120,19 +137,21 @@ for_main() {
           pver=${ver##*-};;
        *) uver="$ver"; pver="not-provided";;
     esac
+    debug 1 "uver=${uver} pver=${pver}"
 
     if [ "$pver" = "not-provided" ]; then
         debug 1 "downloading without a dsc, poking for $src and $ver"
-        local ext="" name="" tname=""
+        local ext="" name="" tname="" nver=""
+        nver=$(no_epoch $ver)
         for ext in ${FORMATS}; do
-            name="${src}_${ver}.orig$ext"
+            name="${src}_${nver}.orig$ext"
             tname="$name.tmp.$$"
             wget "${DSC_BASE_URL}/$name" -O "$odir/$tname" &&
                 mv "$tname" "$odir/$name" &&
                 { error "wrote ${name} to $odir"; return 0; } ||
                 rm -f "$tname"
         done
-        error "failed download of $src at $ver. tried orig formats $FORMATS"
+        error "failed download of $src at $nver. tried orig formats $FORMATS"
         return 1
     else
         debug 1 "src=$src ver=$ver uver=$uver pver=$pver"
@@ -214,8 +233,7 @@ main() {
 dl_to_dir() {
     local src="$1" ver="$2" odir="$3" overwrite=${4:-false} orig=""
     local uver="${ver%-*}"
-    if dir_has_orig "$odir" "$src" "$uver"; then
-        orig=${_RET}
+    if orig=$(find_orig "$src" "$uver" "$odir"); then
         if ! $overwrite; then
             error "orig tarball existed at $orig. --overwrite to overwrite."
             return 0;
@@ -242,17 +260,16 @@ dl_to_dir() {
         return 1
     }
 
-    dir_has_orig "$TEMP_D" "$src" "$uver" || {
+    orig=$(find_orig "$src" "$uver" "$TEMP_D") || {
         error "dget succeeded, but no orig tarball found."
         cat "$TEMP_D/${src}_${ver}.dsc" 1>&2
         ls $TEMP_D 1>&2;
         cd "$sdir"
         return 1
     }
-    orig="$_RET"
 
     cd "$sdir"
-    mv "$_RET" "$odir/"
+    mv "$orig" "$odir/"
     _RET="${odir}/${orig##*/}"
     error "wrote $odir/${orig##*/}"
 }
