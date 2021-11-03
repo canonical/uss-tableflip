@@ -109,6 +109,8 @@ Fill in details:
 * Copy the release notes from the bug (minus the changelog) into the 'Release notes' section
 * Copy the changelog from the bug into the 'Changelog' section.
 
+After creating the release, on the release page, under **Download files for this release**, click 'Add download file'. Set 'Description' to 'Upstream release of <version>'. Attach the tarball and signature created earlier and click 'Upload'.
+
 Once we have created our release, we should create the milestone for the next release.
 * From https://launchpad.net/cloud-init , under `Series and milestones` (middle of page), click the `trunk` series. If you see no `trunk` series, then click `View full history` and find it there
 * Under the `Milestones and releases` section, click the `Create milestone` button
