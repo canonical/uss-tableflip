@@ -43,22 +43,17 @@ new-upstream-release does:
 
 The process goes like this:
 
-    $ git clone ssh://git.launchpad.net/cloud-init -o upstream
-    # if you do not have ssh access, use http://git.launchpad.net/cloud-init
+    $ cd /tmp
+    $ git clone git@github.com:canonical/cloud-init.git -o upstream
 
-    # create a branch tracking upstream/ubuntu/devel
+    # create a clean branch tracking upstream/ubuntu/devel
     # for SRU substitute release name 'xenial' for 'devel'
-    $ git checkout -b ubuntu/devel upstream/ubuntu/devel
+    $ git checkout -B ubuntu/devel upstream/ubuntu/devel
 
-    # if you already had a branch and did not have local changes:
-    #   git checkout ubuntu/devel; git reset --hard upstream/ubuntu/devel
-
-    ## just make a tag, so you can easily revert.
-    ## to do so, just git reset --hard xx-current
-    $ git tag --delete xx-current >/dev/null 2>&1; git tag xx-current
-
-    ## 'master' can be left off as it is the default.
-    $ new-upstream-snapshot master
+    # 'main' can be left off as it is the default.
+    # Use '--first-devel-upload' if this is the first time we are uploading
+    # to the new Ubuntu devel release, which occurs every 6 months.
+    $ new-upstream-snapshot main [--first-devel-upload]
 
     ## Your '$EDITOR' will be opened with the chance to change the
     ## changelog entry.
@@ -72,11 +67,11 @@ The process goes like this:
     ## output then looks like:
     [ubuntu/devel aa945427a] update changelog (new upstream snapshot 0.7.9-242-gdc2bd7994).
     1 file changed, 26 insertions(+)
-    wrote new-upstream-changes.txt for curtin version 18.1-1-g45564eef-0ubuntu1~16.04.1.
+    wrote new-upstream-changes.txt for cloud-init version 18.1-1-g45564eef-0ubuntu1~22.04.1.
     release with:
-    dch --release --distribution=xenial-proposed
-    git commit -m "releasing curtin version 18.1-1-g45564eef-0ubuntu1~16.04.1" debian/changelog
-    git tag ubuntu/18.1-1-g45564eef-0ubuntu1_16.04.1
+    dch --release --distribution=jammy
+    git commit -m "releasing cloud-init version 18.1-1-g45564eef-0ubuntu1~22.04.1" debian/changelog
+    git tag ubuntu/18.1-1-g45564eef-0ubuntu1_22.04.1
 
     ## You can follow its instructions to release and tag.
 
@@ -92,24 +87,22 @@ The tool that I use to do this is [build-package](../scripts/build-package).
 
     $ build-package
     ...
-    wrote ../out/cloud-init_0.7.9-242-gdc2bd7994-0ubuntu1.debian.tar.xz
-    wrote ../out/cloud-init_0.7.9-242-gdc2bd7994-0ubuntu1.dsc
-    wrote ../out/cloud-init_0.7.9-242-gdc2bd7994-0ubuntu1_source.build
-    wrote ../out/cloud-init_0.7.9-242-gdc2bd7994-0ubuntu1_source.buildinfo
-    wrote ../out/cloud-init_0.7.9-242-gdc2bd7994-0ubuntu1_source.changes
-    wrote ../out/cloud-init_0.7.9-242-gdc2bd7994.orig.tar.gz
-
+    wrote ../out/cloud-init_21.4-25-g039c40f9-0ubuntu1~22.04.1.debian.tar.xz
+    wrote ../out/cloud-init_21.4-25-g039c40f9-0ubuntu1~22.04.1.dsc
+    wrote ../out/cloud-init_21.4-25-g039c40f9-0ubuntu1~22.04.1_source.build
+    wrote ../out/cloud-init_21.4-25-g039c40f9-0ubuntu1~22.04.1_source.buildinfo
+    wrote ../out/cloud-init_21.4-25-g039c40f9-0ubuntu1~22.04.1_source.changes
+    wrote ../out/cloud-init_21.4-25-g039c40f9.orig.tar.gz
 
 I then will sbuild the binary and then dput the result.
 
-    $ sbuild --dist=xenial --arch=amd64  --arch-all ../out/cloud-init_18.2-4-g05926e48-ubuntu1~16.04.1.dsc
-    $ dput ubuntu ../out/cloud-init_18.2-4-g05926e48-0ubuntu1~16.04.1.changes
-
+    $ sbuild --dist=jammy --arch=amd64  --arch-all ../out/cloud-init_21.4-25-g039c40f9-0ubuntu1~22.04.1.dsc
+    $ dput ubuntu ../out/cloud-init_21.4-25-g039c40f9-0ubuntu1~22.04.1_source.changes
 
 
 For SRUs don't forget to dput into the [cloud-init proposed ppa](https://launchpad.net/~cloud-init-dev/+archive/ubuntu/proposed)
 
-    $ dput ppa:cloud-init-dev/proposed ../out/cloud-init_18.2-4-g05926e48-0ubuntu1~16.04.1.changes
+    $ dput ppa:cloud-init-dev/proposed ../out/cloud-init_21.4-25-g039c40f9-0ubuntu1~22.04.1_source.changes
 
 Last, we need to push our tag above now that upload succeeded.
 
