@@ -245,13 +245,13 @@ from *before* the refactor, so we specify the previous commit by using
 the ^ suffix)
 
     $ git checkout upstream/ubuntu/daily/$release
-    $ new-upstream-snapshot -v --update-patches
+    $ new-upstream-snapshot -v --update-patches-only
     # quilt will fail here and drop you into a quilt shell "(refresh-fix)"
     $ (refresh-fix)(hostname) cloud-init % quilt push -f
-    $ (refresh-fix)(hostname) cloud-init % git checkout f247dd20ea73f8e153936bee50c57dae9440ecf7^ cloudinit/config/tests/test_ubuntu_advantage.py
-    $ (refresh-fix)(hostname) cloud-init % git checkout f247dd20ea73f8e153936bee50c57dae9440ecf7^ cloudinit/config/cc_ubuntu_advantage.py
-    # Apply any other manual changes required.
-    # See ua-subp.patch in [PR #435}(https://github.com/canonical/cloud-init/pull/435)
+    # Perform any changes to any existing cloudinit modules
+    # When applying changes to a file that is not in the original patch,
+    # run `quilt add some/new/file.py` to make sure quilt records any diffs.
+    # Make any changes to some/new/file.py.
     $ (refresh-fix)(hostname) cloud-init % quilt refresh
     $ (refresh-fix)(hostname) cloud-init % exit 0
 
