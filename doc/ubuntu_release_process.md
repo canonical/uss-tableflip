@@ -32,7 +32,7 @@ It does almost everything needed with a few issues listed below.
 
 new-upstream-release does:
 
-  * merges master into the packaging branch so that history is maintained.
+  * merges main into the packaging branch so that history is maintained.
   * strip out core contributors from attribution in the debian changelog entries.
   * makes changes to debian/patches/series and drops any cherry-picks in that directory.
   * refreshes any patches in debian/patches/
@@ -154,8 +154,8 @@ To cherry-pick:
 
 The `cherry-pick` will produce 1 or 2 commits on the branch with summary like:
 
-  * refresh patches against master commit 2d6e4219
-  * drop cherry picks included in master commit 2d6e4219
+  * refresh patches against main commit 2d6e4219
+  * drop cherry picks included in main commit 2d6e4219
 
 The `fix-daily-branch` will create a local ubuntu/daily/xenial branch from
 the local ubuntu/xenial branch and revert all debian/patches/*cpick* commits
@@ -221,14 +221,14 @@ We have daily packaging recipes that upload to the [daily ppa](https://code.laun
 
 ### When the daily recipe build fails ###
 
-The daily recipe for each release checks out master and then merges both
+The daily recipe for each release checks out main and then merges both
 ubuntu/$release and ubuntu/daily/$release branches and builds the package from
 there.  From time to time, the patches in the
-ubuntu/daily/$release branch need to be refreshed/updated as upstream/master
+ubuntu/daily/$release branch need to be refreshed/updated as upstream/main
 changes.
 
 This is typically done during the new-upstream-release tool process, however,
-new commits to master can break the patches.  In particular, the
+new commits to main can break the patches.  In particular, the
 ubuntu-advantage refactor (commit hash: f247dd20ea73f8e153936bee50c57dae9440ecf7)
 is reverted on bionic and xenial; this patch needs to be refreshed whenever changes
 to cloud-init touch:
@@ -265,7 +265,7 @@ Revert your changes to the two files:
 
 To verify this fixes things for the daily build.
 
-    $ git checkout upstream/master -B master
+    $ git checkout upstream/main -B main
     $ git merge upstream/ubuntu/$release
     $ git merge upstream/ubuntu/daily/$release
     # Assert quilt patches apply and tox passes
@@ -279,7 +279,7 @@ With the patch passing verification, push this branch up for review:
     $ git push <user github repo> ubuntu/daily/$release
 
 In the github UI, make sure the proposal is pointing to ubuntu/daily/$release
-rather than master.
+rather than main.
 
 
 ## Links ##

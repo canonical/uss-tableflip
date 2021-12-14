@@ -48,10 +48,10 @@ Then, add a 'bionic' build
 
  1. go to [~cloud-init-dev/+recipes](https://code.launchpad.net/~cloud-init-dev/+recipes).  Look at one of these for reference.  Ie, there should be a `cloud-init-daily-<RELEASE-2>.
 
- 2. go to [cloud-init/master](https://code.launchpad.net/~cloud-init-dev/cloud-init/+git/cloud-init/+ref/master).  Click 'Create packaging recipe'.  Follow the answers below, remember to replace 'bionic' with the stable release name.
+ 2. go to [cloud-init/main](https://code.launchpad.net/~cloud-init-dev/cloud-init/+git/cloud-init/+ref/main).  Click 'Create packaging recipe'.  Follow the answers below, remember to replace 'bionic' with the stable release name.
 
    * **Name**: cloud-init-bionic
-   * **Description**: build cloud-init from master branch with packaging from ubuntu/bionic branch.
+   * **Description**: build cloud-init from main branch with packaging from ubuntu/bionic branch.
    * [✔️ ] **Use an existing PPA**.  Select 'cloud-init daily builds' here (~cloud-init-dev/ubuntu/daily).  *Note*, here you have to find that in possibly a long list.
    * **Default distribution series**: bionic
    * **Recipe text**: adjust recipe from '1' above
