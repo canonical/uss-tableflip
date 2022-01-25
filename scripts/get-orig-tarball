@@ -3,7 +3,8 @@
 VERBOSITY=0
 TEMP_D=""
 FORMATS=".tar.gz .tar.xz .tar.bz2"
-DSC_BASE_URL="http://launchpad.net/ubuntu/+archive/primary/+files"
+DSC_UBUNTU_BASE_URL="http://launchpad.net/ubuntu/+archive/primary/+files"
+DSC_DEBIAN_BASE_URL="http://launchpad.net/debian/+archive/primary/+files"
 
 error() { echo "$@" 1>&2; }
 fail() { [ $# -eq 0 ] || error "$@"; exit 1; }
@@ -69,10 +70,27 @@ is_released() {
     [ "$1" != "UNRELEASED" -a "$1" != "unreleased" ]
 }
 
-get_dsc_url() {
-    local name="$1" ver="$2"
+check_url() {
+    local url="$1"
+    wget --method=HEAD --quiet "$url"
+}
+
+# get_dsc_urls(package, version)
+get_dsc_urls() {
+    local name="$1" ver="$2" path=""
     ver=$(no_epoch "$ver")
-    _RET="${DSC_BASE_URL}/${name}_${ver}.dsc"
+    path="${name}_${ver}.dsc"
+    _RET="${DSC_UBUNTU_BASE_URL}/$path ${DSC_DEBIAN_BASE_URL}/$path"
+    return
+}
+
+get_dsc_url() {
+    local name="$1" ver="$2" url=""
+    get_dsc_urls "$name" "$ver" || return 1
+    for url in $_RET; do
+        check_url "$url" && _RET="$url" && return 0
+    done
+    return 1
 }
 
 find_orig() {
@@ -146,18 +164,26 @@ for_main() {
     debug 1 "uver=${uver} pver=${pver}"
 
     if [ "$pver" = "not-provided" ]; then
+        local ext="" name="" tname="" nver="" url="" urls=""
+        nver=$(no_epoch "$ver")
         debug 1 "downloading without a dsc, poking for $src and $ver"
-        local ext="" name="" tname="" nver=""
-        nver=$(no_epoch $ver)
-        for ext in ${FORMATS}; do
-            name="${src}_${nver}.orig$ext"
-            tname="$name.tmp.$$"
-            wget "${DSC_BASE_URL}/$name" -O "$odir/$tname" &&
-                mv "$tname" "$odir/$name" &&
-                { error "wrote ${name} to $odir"; return 0; } ||
-                rm -f "$tname"
+        for url in "${DSC_UBUNTU_BASE_URL}" "${DSC_DEBIAN_BASE_URL}"; do
+            for ext in ${FORMATS}; do
+                name="${src}_${nver}.orig$ext"
+                tname="$name.tmp.$$"
+                debug 2 "trying $url/${src}_${nver}.orig${ext}"
+                urls="$urls $url/$name"
+                check_url "$url/$name" || continue
+                wget "$url/$name" -O "$odir/$tname" &&
+                    mv "$odir/$tname" "$odir/$name" &&
+                    { error "wrote ${name} to $odir"; return 0; } ||
+                    rm -f "$tname"
+            done
         done
-        error "failed download of $src at $nver. tried orig formats $FORMATS"
+        error "failed download of $src at $nver. tried orig formats $FORMATS. Tried:"
+        for url in $urls; do
+            error "   $url"
+        done
         return 1
     else
         debug 1 "src=$src ver=$ver uver=$uver pver=$pver"
