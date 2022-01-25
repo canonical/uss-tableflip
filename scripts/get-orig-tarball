@@ -10,14 +10,20 @@ fail() { [ $# -eq 0 ] || error "$@"; exit 1; }
 
 Usage() {
     cat <<EOF
-Usage: ${0##*/} [ options ] [changelog [dir]]
+Usage: ${0##*/} [ options ] [changelog [dir]] | [subcommand]
 
-   changelog: the changelog to parse.
+   changelog: the changelog to parse. Default: debian/changelog.
    dir: place to put orig tarball. 
         default: dirname(changelog)/../../
 
    options:
       -O | --overwrite: overwrite an existing file 
+
+
+   subcommands:
+
+       for: specify a package and version without parsing debian/changelog
+            See '${0##*/} for --help' for more information.
 EOF
 }
 
@@ -189,11 +195,17 @@ main() {
 
     if [ $# -ge 1 ]; then
         changelog="$1"
+        [ -f "$changelog" ] || {
+            error "$changelog: not a file"
+            return 1
+        }
+    else
+        [ -f "$changelog" ] || {
+            Usage 1>&2
+            error "no '$changelog' exists in under $PWD."
+            return 1
+        }
     fi
-    [ -f "$changelog" ] || {
-        error "$changelog: not a file."
-        return 1
-    }
 
     if [ $# -ge 2 ]; then
         odir="$2"
