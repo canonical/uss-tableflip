@@ -160,10 +160,9 @@ print_dch() {
     local commit="$1" subject="$2" author="$3" bugs="$4" bug_tracker="$5"
     local aname="" abugs="" indent="    - " indent2="      " ll=79
     local i=""
-    #( for i in ${bugs}; do echo ${i%,}; done); return
     aname=${author% <*}
     case "$aname" in
-        Chad\ Smith|Daniel\ Watkins|Lucas\ Moura|James\ Falcon) aname="";;
+        Chad\ Smith|Daniel\ Watkins|Lucas\ Moura|James\ Falcon|Brett\ Holman) aname="";;
     esac
     abugs="${aname:+ [${aname}]}${bugs:+ (${bug_tracker}: ${bugs})}"
     for filter in "${FILTER_LIST[@]}"; do
