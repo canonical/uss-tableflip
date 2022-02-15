@@ -16,6 +16,11 @@ Adjust any references to `upstream` and `origin` accordingly if yours are differ
 Some scripts referenced in this guide invoke other tools assumed to be on the PATH, so add `uss-tableflip/scripts` to your PATH.
 Additionally, the `lptools` package should be installed. Use `apt` to install it.
 
+## Tools Updated For Core Contributors
+To avoid repetitive names in the cloud-init changelog, core contributors' names are excluded from the changelog contribution list.
+New core contributors should add themselves to the list in
+[log2dch](https://github.com/canonical/uss-tableflip/blob/main/scripts/log2dch)
+
 # Pre-release
 ## Send pre-release email to mailing list
 Send an email to the cloud-init mailing list announcing the upcoming release. See previous emails for examples:
@@ -58,7 +63,7 @@ configured to work around this problem for release branches, so you
 can disregard these local failures.  (We will create a tag later in
 the process which fixes this issue.)
 
-Push the branch up for review and create a pull request.  We will use that PR for some documentation on things that have been tested.
+Push the branch up for review and create a pull request against main.  We will use that PR for some documentation on things that have been tested.
 
 ## Fill in launchpad bug highlights
 Now that your PR is up and ready for review, go back to the launchpad bug you created and fill in the highlights. There's no real formula for this other than a bulleted list of the 5-ish most noteworthy changes this release. Generally this won't include testing or simple bug fixes.
