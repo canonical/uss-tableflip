@@ -148,9 +148,12 @@ Example:
 $ ./lp-bugs-released cloud-init 21.3 1867532 1911680 1925395 1931392 1931577 1932048 1940233 1940235 1940839
 ```
 
-
 ## Upload to ubuntu/devel
-TODO: link to SRU documentation
+```bash
+$ git checkout upstream/ubuntu/devel -b ubuntu/devel
+$ new-upstream-snapshot  # add the Release LP: #
+$ <run whatever commands new-upstream-snapshot tells you to run next to finish the release>
+```
 
 ## Update COPR build cloud-init/el-testing repository with latest upstream release
  Build RPM with:
