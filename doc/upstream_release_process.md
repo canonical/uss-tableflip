@@ -150,7 +150,8 @@ $ ./lp-bugs-released cloud-init 21.3 1867532 1911680 1925395 1931392 1931577 193
 
 ## Upload to ubuntu/devel
 ```bash
-$ git checkout upstream/ubuntu/devel -b ubuntu/devel
+$ git fetch upstream
+$ git checkout upstream/ubuntu/devel -B ubuntu/devel
 $ new-upstream-snapshot  # add the Release LP: #
 $ <run whatever commands new-upstream-snapshot tells you to run next to finish the release>
 ```
