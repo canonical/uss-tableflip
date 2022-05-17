@@ -59,7 +59,7 @@ Highlights:
 $CHANGELOG
 EOF
 
-echo "Refresh main and create a new release branch branch? (y/n)"
+echo "Refresh main and create a new release branch? (y/n)"
 read RESP
 if [ "$RESP" = "y" ]; then
   git checkout main
