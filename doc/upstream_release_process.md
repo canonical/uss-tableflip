@@ -69,8 +69,11 @@ Push the branch up for review and create a pull request against main.  We will u
 Now that your PR is up and ready for review, go back to the launchpad bug you created and fill in the highlights. There's no real formula for this other than a bulleted list of the 5-ish most noteworthy changes this release. Generally this won't include testing or simple bug fixes.
 
 ## Merge branch and tag
-After getting approval for your release branch, merge the branch to main, then tag (annotated and signed):
+After getting approval for your release branch on Github, merge the branch.
+
+Then tag the new commit on upstream/main created by the squash merge:
 ```bash
+$ git fetch; git checkout main; git reset --hard upstream/main
 $ git tag --annotate --sign -m 'Release <version>' <version>
 ```
 Then push it:
@@ -93,20 +96,23 @@ $ gpg --sign --armor --detach-sig cloud-init-<version>.tar.gz
 
 ## Create release in Launchpad
 Example of a finished release: https://launchpad.net/cloud-init/trunk/21.3
+
 ### Option 1: Script
+* If [this bug](https://bugs.launchpad.net/lptools/+bug/1974061) is unresolved,
+go add a comment saying that you're affected and it's a 2 byte fix and then skip to Option 2.
 * Copy the changelog (for *just* this release) to a file called 'changelog-file'
 * Copy the release notes (not including changelog) from the launchpad bug to a file called 'releasenotes-file'
 ```bash
 $ lp-project-upload cloud-init <version> cloud-init-<version>.tar.gz <NEXT_version> changelog-file releasenotes-file
 ```
 Note that `<NEXT_version>` in the command is for specifying our next milestone. So if we're currently releasing 21.3, `<NEXT_version>` would be 21.4.
+
 ### Option 2: Launchpad UI
 Don't do this if you used Option 1 above.
 
-Go to https://launchpad.net/cloud-init click the milestone that we're
-releasing.
+Go to https://launchpad.net/cloud-init/trunk
 
-Hit 'Create release' (Under Milestone information in middle of page)
+Scroll to the bottom of 'Milestones and releases' and click '⨁  Create release'
 
 Fill in details:
 * **Don't** keep milestone active
@@ -136,7 +142,11 @@ Any Launchdpad bugs that were listed in the git commit messages from this releas
 
 First, get the list of bugs that been fixed this release:
 ```bash
-$ git log <previous_version>..<version> | grep "^[ ]*LP:" | sort -u | awk -F 'LP: #' '{printf $2 " "}'
+$ git log <previous_version>..<version> \
+	| grep "^[ ]*LP:" \
+	| sort -u \
+	| awk -F 'LP: #' '{printf $2 " "}' \
+	| sed 's/[,\#]//g'  # strip any loose commas and stray octothorps
 ```
 
 Next, use the uss-tableflip script called lp-bugs-released to close the bugs:
@@ -147,6 +157,22 @@ Example:
 ```bash
 $ ./lp-bugs-released cloud-init 21.3 1867532 1911680 1925395 1931392 1931577 1932048 1940233 1940235 1940839
 ```
+
+The lp-bugs-released script is best effort. Be sure to follow up on Launchpad
+any bugs that the script warns about.
+
+## Upload to schemastore:
+
+The first [release](https://www.schemastore.org/api/json/catalog.json) was merged.
+This serves as a placeholder for defining a process, testing, etc.
+
+Questions to ask / answer:
+
+1. Does [the catalog](https://www.schemastore.org/api/json/catalog.json) contain a valid link for cloud-init?
+2. Does [the schema version file](https://raw.githubusercontent.com/canonical/cloud-init/main/cloudinit/config/schemas/versions.schema.cloud-config.json) have a definition for the latest release?
+
+These checks should be automatable.
+
 
 ## Upload to ubuntu/devel
 ```bash
