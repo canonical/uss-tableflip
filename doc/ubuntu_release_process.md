@@ -20,7 +20,7 @@ We have high level paths for uploading:
 ### new upstream release/snapshot ###
 This is the *only* mechanism for development release uploads, and the *heavily preferred* mechanism for stable release updates (SRU).
 
-Our goal is (and trunk integration tests show) that cloud-init works with xenial and beyond.
+Our goal is (and main integration tests show) that cloud-init works with xenial and beyond.
 
 Things that need to be considered:
 
@@ -113,7 +113,7 @@ Last, we need to push our tag above now that upload succeeded.
 
 
 ### cherry-picked changes ###
-This is generally not the mechanism that is preferred for any release supported by trunk.  It may be used in order to get a upload in *really quickly* for a hot fix.
+This is generally not the mechanism that is preferred for any release supported by main.  It may be used in order to get a upload in *really quickly* for a hot fix.
 
 #### Cherry-pick Process
 The tool for doing this is in ``uss-tableflip/scripts/cherry-pick``.  It takes as import a commit-ish that it will create a cherry-pick from.
@@ -212,39 +212,28 @@ If there were a number of releases that were missed you could do
 
 
 ## Daily packaging recipes and ppa ##
-We have daily packaging recipes that upload to the [daily ppa](https://code.launchpad.net/~cloud-init-dev/+archive/ubuntu/daily).  These build Ubuntu packaging on top of trunk.  This differs from trunk built for the given Ubuntu release because the Ubuntu release may have patches applied.
-
-  * [xenial](https://code.launchpad.net/~cloud-init-dev/+recipe/cloud-init-daily-xenial)
-  * [artful](https://code.launchpad.net/~cloud-init-dev/+recipe/cloud-init-daily-artful)
-  * [bionic](https://code.launchpad.net/~cloud-init-dev/+recipe/cloud-init-daily-bionic)
-  * [devel](https://code.launchpad.net/~cloud-init-dev/+recipe/cloud-init-daily-devel)
+We have daily packaging recipes that upload to the [daily ppa](https://code.launchpad.net/~cloud-init-dev/+archive/ubuntu/daily).  These build Ubuntu packaging on top of main.  This differs from main built for the given Ubuntu release because the Ubuntu release may have patches applied. The recipes can be found [here](https://code.launchpad.net/~cloud-init-dev/+recipes)
 
 ### When the daily recipe build fails ###
 
-The daily recipe for each release checks out main and then merges both
-ubuntu/$release and ubuntu/daily/$release branches and builds the package from
+The daily recipe for each release checks out main, merges the
+ubuntu/$release branch, and builds the package from
 there.  From time to time, the patches in the
-ubuntu/daily/$release branch need to be refreshed/updated as upstream/main
-changes.
+ubuntu/$release branch need to be refreshed/updated, or we need
+to provide an upstream snapshot as upstream/main changes.
 
 This is typically done during the new-upstream-release tool process, however,
-new commits to main can break the patches.  In particular, the
-ubuntu-advantage refactor (commit hash: f247dd20ea73f8e153936bee50c57dae9440ecf7)
-is reverted on bionic and xenial; this patch needs to be refreshed whenever changes
-to cloud-init touch:
+new commits to main can break the patches. If a commit to main touches any file
+that has a patch in the debian/patches directory, we'll likely get a
+merge conflict.
 
- * cloudinit/config/cc_ubuntu_advantage.py
- * cloudinit/config/tests/test_ubuntu_advantage.py
-
-At this point if daily builds are failing, this will fail when quilt
+When you new-upstream-snapshot, this will fail when quilt
 cannot apply the patch and put you into a subshell and ask you to
 fix and then quit refresh.  The source of the issue is that the release
 branch needs the upstream changes to ensure the patch still applies.
-Do the following to fix the patch (Note: we need to check out the files
-from *before* the refactor, so we specify the previous commit by using
-the ^ suffix)
+Do the following to fix the patch:
 
-    $ git checkout upstream/ubuntu/daily/$release
+    $ git checkout upstream/ubuntu/$release
     $ new-upstream-snapshot -v --update-patches-only
     # quilt will fail here and drop you into a quilt shell "(refresh-fix)"
     $ (refresh-fix)(hostname) cloud-init % quilt push -f
@@ -257,17 +246,10 @@ the ^ suffix)
 
 Follow the prompt to commit the updated debian/changelog.
 
-Revert your changes to the two files:
-
-    $ git checkout HEAD cloudinit/config/tests/test_ubuntu_advantage.py
-    $ git checkout HEAD cloudinit/config/cc_ubuntu_advantage.py
-
-
 To verify this fixes things for the daily build.
 
     $ git checkout upstream/main -B main
     $ git merge upstream/ubuntu/$release
-    $ git merge upstream/ubuntu/daily/$release
     # Assert quilt patches apply and tox passes
     $ quilt push -a
     $ tox -p auto
@@ -276,9 +258,9 @@ To verify this fixes things for the daily build.
 
 With the patch passing verification, push this branch up for review:
 
-    $ git push <user github repo> ubuntu/daily/$release
+    $ git push <user github repo> ubuntu/$release
 
-In the github UI, make sure the proposal is pointing to ubuntu/daily/$release
+In the github UI, make sure the proposal is pointing to ubuntu/$release
 rather than main.
 
 
