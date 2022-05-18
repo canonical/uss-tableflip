@@ -98,8 +98,7 @@ $ gpg --sign --armor --detach-sig cloud-init-<version>.tar.gz
 Example of a finished release: https://launchpad.net/cloud-init/trunk/21.3
 
 ### Option 1: Script
-* If [this bug](https://bugs.launchpad.net/lptools/+bug/1974061) is unresolved,
-go add a comment saying that you're affected and it's a 2 byte fix and then skip to Option 2.
+* If [this bug](https://bugs.launchpad.net/lptools/+bug/1974061) is unresolved, skip to Option 2.
 * Copy the changelog (for *just* this release) to a file called 'changelog-file'
 * Copy the release notes (not including changelog) from the launchpad bug to a file called 'releasenotes-file'
 ```bash
