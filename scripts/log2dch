@@ -162,7 +162,7 @@ print_dch() {
     local i=""
     aname=${author% <*}
     case "$aname" in
-        Chad\ Smith|Daniel\ Watkins|Lucas\ Moura|James\ Falcon|Brett\ Holman) aname="";;
+        Chad\ Smith|Lucas\ Moura|James\ Falcon|Brett\ Holman) aname="";;
     esac
     abugs="${aname:+ [${aname}]}${bugs:+ (${bug_tracker}: ${bugs})}"
     for filter in "${FILTER_LIST[@]}"; do
@@ -213,8 +213,11 @@ git_log_to_dch() {
                 subject=""
                 ;;
             Author:*) author="${line#Author: }";;
-            LP:*) bugs="${bugs:+${bugs}, }${line#*: }";;
-            Fixes:*|Closes:*) bug_tracker="GH"; bugs="${bugs:+${bugs}, }${line#*: }";;
+            LP:*) bug_tracker="LP"; bugs="${bugs:+${bugs}, }${line#*: }";;
+            Fixes:*|Closes:*)
+                bug_tracker="GH";
+                bug="${line#*: }";
+                [ ! -z "${bug##*[!0-9]*}" ] && bugs="${bugs:+${bugs}, }$bug";;
             "") [ -z "$subject" ] && read -r subject;;
         esac
     done
