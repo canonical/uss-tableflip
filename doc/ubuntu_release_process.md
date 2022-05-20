@@ -114,6 +114,7 @@ Last, we need to push our tag above now that upload succeeded.
 
 ### cherry-picked changes ###
 This is generally not the mechanism that is preferred for any release supported by main.  It may be used in order to get a upload in *really quickly* for a hot fix.
+Note: Nonstandard packaging changes need to be applied to both the ubuntu/$SERIES branch and the ubuntu/$SERIES-hotfix branches.
 
 #### Cherry-pick Process
 The tool for doing this is in ``uss-tableflip/scripts/cherry-pick``.  It takes as import a commit-ish that it will create a cherry-pick from.
