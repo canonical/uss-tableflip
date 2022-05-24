@@ -14,12 +14,17 @@ Adjust any references to `upstream` and `origin` accordingly if yours are differ
 
 ## Tools on path
 Some scripts referenced in this guide invoke other tools assumed to be on the PATH, so add `uss-tableflip/scripts` to your PATH.
-Additionally, the `lptools` package should be installed. Use `apt` to install it.
+Additionally, the `lptools` package and `git-buildpackage` should be installed. Use `apt` to install them.
 
 ## Tools Updated For Core Contributors
 To avoid repetitive names in the cloud-init changelog, core contributors' names are excluded from the changelog contribution list.
-New core contributors should add themselves to the list in
-[log2dch](https://github.com/canonical/uss-tableflip/blob/main/scripts/log2dch)
+
+New core contributors should add themselves to the list in the following locations:
+* [log2dch](https://github.com/canonical/uss-tableflip/blob/main/scripts/log2dch)
+* [gbp_format_changelog](https://github.com/canonical/uss-tableflip/blob/main/scripts/gbp_format_changelog)
+
+**NOTE:** `new-upstream-snapshot` uses git-buildpackage to generate debian/changelog entries. For project customization, copy `scripts/add_changelog.py`, `scripts/gbp_format_changelog` and `scripts/gbp.conf` into your project's **debian/** directory.
+
 
 # Pre-release
 ## Send pre-release email to mailing list

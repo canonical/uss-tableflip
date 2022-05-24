@@ -64,59 +64,6 @@ cleanup() {
 }
 
 
-add_changelog_entries() {
-    # if top commit has UNRELEASED, then add these to that.
-    # otherwise, add a new entry.  Basically similar behavior
-    # to what 'dch -i' gives you.
-    # the entries need to be indented properly (  * your-entry)
-    local entries="$1" version="$2" dist="" unrel_entries="" tmp="" out=""
-    local changelog="debian/changelog" old="${TEMP_D}/old-changes"
-    local pkg_name="" new="${TEMP_D}/unreleased-changes"
-    local snapshot_header="New upstream snapshot"
-    dist=$(dpkg-parsechangelog --show-field Distribution)
-    pkg_name=$(dpkg-parsechangelog --show-field Source)
-    if [ "$dist" = "UNRELEASED" ]; then
-        unrel_entries=$(
-            dpkg-parsechangelog --count=1 --show-field Changes | tail -n +4)
-        if [ -z "$version" ]; then
-            version=$(
-                dpkg-parsechangelog --count=1 --show-field Version)
-        fi
-        local pver=""
-        pver=$(dpkg-parsechangelog --offset 1 --count=1 --show-field Version)
-        sed -n "/ (${pver})/,\$p" "debian/changelog" > "$old"
-    else
-        if [ -z "$version" ]; then
-            local lastnum=""
-            out=$(dpkg-parsechangelog --count=1 --show-field Version)
-            tmp=${out%?}
-            lastnum=${out#${tmp}}
-            version=${tmp}$((lastnum+1))
-        fi
-        cp "$changelog" "$old"
-    fi
-    {
-    echo "$pkg_name ($version) UNRELEASED; urgency=medium"
-    echo
-    if [ -n "${unrel_entries}" ]; then
-        # If both unreleased and new entries are New upstream snapshots
-        # combine them
-        { IFS="$CR"; set -- $unrel_entries; IFS="$oifs"; }
-        for line in "$@"; do
-            case "${line}" in
-                # Inject current entries in place of previous snapshot_header
-                *${snapshot_header}*) echo "${entries}"; entries="";;
-                # Print rest of unreleased lines in the changelog
-                *) echo "${line}";;
-            esac
-        done
-    fi
-    [ -n "${entries}" ] && echo "${entries}"
-    printf "\n -- %s <%s>  %s\n\n" "$DEBFULLNAME" "$DEBEMAIL" "$(date -R)"
-    } > "$new"
-    cat "$new" "$old" > "$changelog"
-}
-
 refresh_shell() {
     cat 1>&2 <<EOF
 Dropping you into a shell. Either do
@@ -178,6 +125,7 @@ main() {
     local skip_branch_name_check="${SKIP_BRANCH_NAME_CHECK:-0}"
     local update_patches_only=false first_devel_upload=false first_sru=false bug_refs_in_clog=true skip_release=false sru_bug_fillstr="SRU_BUG_NUMBER_HERE"
 
+    orig_hash=$(git describe --abbrev=8)
     local cur="" next="" 
     while [ $# -ne 0 ]; do
         cur="$1"; next="$2";
@@ -269,11 +217,10 @@ main() {
     fi
     is_devel=$(test "${ver_suff#*$devel_ver}" != "${ver_suff}" && echo "true" || echo "false")
 
-    local sru_bug_string="" skip_bugs=""
-    [ "${bug_refs_in_clog}" = "false" ] && skip_bugs="--skip-bugs"
+    local sru_bug_string=""
     if [ "${is_devel}" = "false" ] && [ "${first_devel_upload}" = "false" ]; then
         sru_bug_string="(LP: #$sru_bug_fillstr)"
-        skip_bugs="--skip-bugs"
+        skip_bugs="true"
     fi
 
     # turn 0.7.7-10-gbc2c326-0ubuntu1 into 'bc2c326'
@@ -355,11 +302,11 @@ main() {
             done
             git commit -m "$msg" "$dpseries" $drops
 
-            msg="  * drop the following cherry-picks now included:"
+            msg="drop the following cherry-picks now included:"
             for file in $drops; do
-                msg="${msg}$CR    + ${file##*/}"
+                msg="${msg}$CR+${file##*/}"
             done
-            add_changelog_entries "$msg" ||
+            python3 $(dirname $0)/add_changelog.py "${msg}" "${orig_hash}" "${bug_refs_in_clog}" ||
                 fail "failed adding changelog entry cherry-pick drops."
             git commit -m "update changelog." debian/changelog ||
                 fail "failed to commit changelog changes for drops."
@@ -421,13 +368,13 @@ main() {
                 echo
                 echo "refresh patches against ${from_ref} commit" \
                      "${upstream_hash}:"
-                for i in ${refreshed}; do echo "  $i"; done)
+                for i in ${refreshed}; do echo "+$i"; done)
             git commit -m "$msg" $refreshed ||
                 fail "failed to commit refreshed patches: $refreshed"
             msg=$(
-                echo "  * refresh patches:"
-                for i in ${refreshed}; do echo "   + $i"; done)
-            add_changelog_entries "$msg" ||
+                echo "refresh patches:"
+                for i in ${refreshed}; do echo "+$i"; done)
+            python3 $(dirname $0)/add_changelog.py "${msg}" "${orig_hash}" "${bug_refs_in_clog}" ||
                 fail "failed adding changelog entry for refresh"
             git commit -m "update changelog." debian/changelog ||
                 fail "failed to commit changelog changes."
@@ -459,17 +406,8 @@ main() {
     fi
 
     local clog="${TEMP_D}/changelog" gitlog="${TEMP_D}/gitlog"
-    git log --first-parent --no-decorate --format=full \
-        "${prev_pkg_hash}..${from_ref}" >  "$gitlog" ||
-        fail "failed git log ${prev_pkg_hash}..${from_ref}"
-
-    local entries=""
-    header="  * $new_msg${sru_bug_string:+ ${sru_bug_string}}"
-    entries=`cat $gitlog | log2dch $skip_bugs`
-    add_changelog_entries "$header\n$entries" "${new_pkg_ver}" || fail
-
-    cat "$gitlog" | log2dch $skip_bugs > "new-upstream-changes.txt" ||
-        fail "failed log2dch"
+    header="$new_msg${sru_bug_string:+ ${sru_bug_string}}"
+    python3 $(dirname $0)/add_changelog.py "${header}" "${new_pkg_ver}" "${bug_refs_in_clog}" || fail
 
     dch -e || fail "dch -e exited $?"
 
