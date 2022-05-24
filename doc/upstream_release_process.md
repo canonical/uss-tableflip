@@ -134,7 +134,7 @@ Once we have created our release, we should create the milestone for the next re
 * In the 'Choose a tag' dropdown, select tag pushed earlier
 * Set `<version>` as Release title
 * Use the "Release Highlights" from the email/launchpad/discourse posts as the description ([example here](https://github.com/canonical/cloud-init/releases/tag/22.2))
-* Click 'Publish release' (double check this was done, last time it ended up in "draft" state
+* Click 'Publish release' (double check this was done, last time it ended up in "draft" state)
 
 
 ## Close bugs
