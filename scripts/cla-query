@@ -1,9 +1,10 @@
 #!/usr/bin/python3
 """Lauchpad IDs to query to see if userid has signed CLA."""
 
-from launchpadlib.launchpad import Launchpad
 import sys
 from argparse import ArgumentParser
+
+from launchpadlib.launchpad import Launchpad
 
 LP_INSTANCE = "production"
 CLA_GROUPS = ["~contributor-agreement-canonical", "~canonical-server"]
@@ -11,9 +12,7 @@ CLA_GROUPS = ["~contributor-agreement-canonical", "~canonical-server"]
 
 def get_parser():
     parser = ArgumentParser(description=__doc__)
-    parser.add_argument(
-        "lpid", type=str,
-        help=__doc__)
+    parser.add_argument("lpid", type=str, help=__doc__)
     return parser
 
 
@@ -21,9 +20,8 @@ def main():
 
     parser = get_parser()
     args = parser.parse_args()
-    print('Logging into Launchpad')
-    lp = Launchpad.login_anonymously(
-        "cla-validator", LP_INSTANCE)
+    print("Logging into Launchpad")
+    lp = Launchpad.login_anonymously("cla-validator", LP_INSTANCE)
     member_names = set()
     for project_name in CLA_GROUPS:
         proj = lp.projects(project_name)

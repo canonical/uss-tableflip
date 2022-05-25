@@ -2,10 +2,11 @@
 """Create bugs in launchpad for the specified project"""
 
 import argparse
+
 from launchpadlib.launchpad import Launchpad
 
-BUG_IMPORTANCE = ['Low', 'Wishlist', 'Medium', 'High', 'Critical']
-BUG_STATUS = ['New', 'Confirmed', 'Triaged', 'In Progress', 'Fix Committed']
+BUG_IMPORTANCE = ["Low", "Wishlist", "Medium", "High", "Critical"]
+BUG_STATUS = ["New", "Confirmed", "Triaged", "In Progress", "Fix Committed"]
 CREATE_BUG_MESSAGE_TMPL = """
 Creating a bug in {project}:
 Importance: {importance}
@@ -20,30 +21,55 @@ Title: {title}
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
 
-    parser.add_argument('--title', required=True, action='store',
-                        help="Bug title string")
-    parser.add_argument('--tag', action='append', default=[],
-                        help="Specify optional tag to add to the bug.")
-    parser.add_argument('--importance', action='store', default=None,
-                        choices=BUG_IMPORTANCE, help="Bug importance value")
-    parser.add_argument('--status', action='store', default='New',
-                        choices=BUG_STATUS, help="Bug status value")
-    parser.add_argument('--description', action='store', required=True,
-                        help="Bug description string or @file")
-    parser.add_argument('--dry-run', action='store_true', default=False,
-                        help='only report what would be done')
-    parser.add_argument('project', action='store', default=None,
-                        help='The project to use.')
+    parser.add_argument(
+        "--title", required=True, action="store", help="Bug title string"
+    )
+    parser.add_argument(
+        "--tag",
+        action="append",
+        default=[],
+        help="Specify optional tag to add to the bug.",
+    )
+    parser.add_argument(
+        "--importance",
+        action="store",
+        default=None,
+        choices=BUG_IMPORTANCE,
+        help="Bug importance value",
+    )
+    parser.add_argument(
+        "--status",
+        action="store",
+        default="New",
+        choices=BUG_STATUS,
+        help="Bug status value",
+    )
+    parser.add_argument(
+        "--description",
+        action="store",
+        required=True,
+        help="Bug description string or @file",
+    )
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        default=False,
+        help="only report what would be done",
+    )
+    parser.add_argument(
+        "project", action="store", default=None, help="The project to use."
+    )
 
     args = parser.parse_args()
 
     lp = Launchpad.login_with(
-        "uss-tableflip lp-bug-create", 'production', version='devel')
+        "uss-tableflip lp-bug-create", "production", version="devel"
+    )
 
     project_name = args.project
     lp_project = lp.projects(project_name)
-    if args.description and args.description.startswith('@'):
-        with open(args.description[1:], 'r') as stream:
+    if args.description and args.description.startswith("@"):
+        with open(args.description[1:], "r") as stream:
             description = stream.read()
     else:
         description = args.description
@@ -51,11 +77,17 @@ def main():
         "target": lp_project,
         "title": args.title,
         "description": description,
-        "tags": args.tag}
+        "tags": args.tag,
+    }
 
-    print(CREATE_BUG_MESSAGE_TMPL.format(
-        project=project_name, importance=args.importance,
-        status=args.status, **create_args))
+    print(
+        CREATE_BUG_MESSAGE_TMPL.format(
+            project=project_name,
+            importance=args.importance,
+            status=args.status,
+            **create_args
+        )
+    )
     if args.dry_run:
         return
     lp_bug = lp.bugs.createBug(**create_args)
@@ -68,5 +100,5 @@ def main():
             task.lp_save()
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()

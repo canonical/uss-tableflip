@@ -5,8 +5,9 @@ Update the bug with a comment.
 """
 
 import argparse
-import sys
 import re
+import sys
+
 from launchpadlib.launchpad import Launchpad
 
 
@@ -17,39 +18,65 @@ def main():
     comment_tmpl = (
         "This bug is believed to be fixed in {project} in version "
         "{version}. If this is still a problem for you, please make a "
-        "comment and set the state back to New\n\nThank you.")
+        "comment and set the state back to New\n\nThank you."
+    )
 
-    parser.add_argument('--comment', action='store', default=comment_tmpl,
-                        help='comment on the bug with this message',
-                        dest='comment_tmpl')
-    parser.add_argument('--subject', action='store', default=subject_tmpl,
-                        help='The subject of the comment',
-                        dest='subject_tmpl')
-    parser.add_argument('--dry-run', action='store_true', default=False,
-                        help='only report what would be done')
-    parser.add_argument('project', action='store', default=None,
-                        help='The project to use.')
-    parser.add_argument('version', action='store', default=None,
-                        help='The version this is fixed in.')
-    parser.add_argument('bugs', action='store', default=None,
-                        nargs='+', help='The bugs to mark fix-released.')
+    parser.add_argument(
+        "--comment",
+        action="store",
+        default=comment_tmpl,
+        help="comment on the bug with this message",
+        dest="comment_tmpl",
+    )
+    parser.add_argument(
+        "--subject",
+        action="store",
+        default=subject_tmpl,
+        help="The subject of the comment",
+        dest="subject_tmpl",
+    )
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        default=False,
+        help="only report what would be done",
+    )
+    parser.add_argument(
+        "project", action="store", default=None, help="The project to use."
+    )
+    parser.add_argument(
+        "version",
+        action="store",
+        default=None,
+        help="The version this is fixed in.",
+    )
+    parser.add_argument(
+        "bugs",
+        action="store",
+        default=None,
+        nargs="+",
+        help="The bugs to mark fix-released.",
+    )
 
     args = parser.parse_args()
 
-    if not (re.match(r"^[0-9][0-9].[0-9]$", args.version) or
-            re.match(r"[0-9].[0-9]+$", args.version)):
+    if not (
+        re.match(r"^[0-9][0-9].[0-9]$", args.version)
+        or re.match(r"[0-9].[0-9]+$", args.version)
+    ):
         sys.stderr.write("%s does not look like a version.\n" % args.version)
         sys.exit(1)
 
     lp = Launchpad.login_with(
-        "uss-tableflip lp-bugs-released", 'production', version='devel')
+        "uss-tableflip lp-bugs-released", "production", version="devel"
+    )
 
     project_name = args.project
     # lp_project = lp.projects(project_name)
     # project_url = lp_project.web_link
     # bug_url = 'https://bugs.launchpad.net/cloud-init/+bug/'
 
-    data = {'version': args.version, 'project': args.project}
+    data = {"version": args.version, "project": args.project}
     if comment_tmpl:
         comment = args.comment_tmpl.format(**data)
     else:
@@ -64,9 +91,10 @@ def main():
         sys.stderr.write("Cannot set subject and not comment.\n")
         sys.exit(1)
 
-    print("%sMarking %d bugs on project '%s' as fix-released\n" %
-          ("[dry-run] " if args.dry_run else "", len(args.bugs),
-           args.project))
+    print(
+        "%sMarking %d bugs on project '%s' as fix-released\n"
+        % ("[dry-run] " if args.dry_run else "", len(args.bugs), args.project)
+    )
     print("---")
     print("Subject: %s" % subject)
     print("Comment: %s" % comment)
@@ -77,29 +105,29 @@ def main():
         print("  getting bug %s" % bug_num)
         sys.stdout.flush()
         bug = lp.bugs[bug_num]
-        info = {'task': None, 'bug': bug, 'num': bug_num}
+        info = {"task": None, "bug": bug, "num": bug_num}
         for task in bug.bug_tasks:
             if task.bug_target_name == project_name:
-                info['task'] = task
+                info["task"] = task
                 break
         buginfo.append(info)
 
-    missing = [i['num'] for i in buginfo if i['task'] is None]
+    missing = [i["num"] for i in buginfo if i["task"] is None]
     if missing:
-        print("missing tasks for: %s" % ' '.join(missing))
+        print("missing tasks for: %s" % " ".join(missing))
 
-    fix_released = 'Fix Released'
+    fix_released = "Fix Released"
     # print("buginfo: %s" % buginfo)
     for info in buginfo:
         sys.stdout.flush()
-        print("bug %s" % info['num'])
-        task = info['task']
+        print("bug %s" % info["num"])
+        task = info["task"]
         if not task:
             print("no bug task for project %s" % args.project)
             continue
-        bug = info['bug']
+        bug = info["bug"]
         if task.status == fix_released:
-            print("%s: already fix released\n" % info['num'])
+            print("%s: already fix released\n" % info["num"])
             continue
         if args.dry_run:
             print("  mark as fix-released")
@@ -113,5 +141,5 @@ def main():
             print("subject=%s" % subject)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()

@@ -3,9 +3,9 @@
 import argparse
 import logging as log
 import os
-import sys
 import shutil
 import subprocess
+import sys
 import urllib.request
 
 from jenkinsapi.jenkins import Jenkins
@@ -17,27 +17,45 @@ KNOWN_ISSUE_PREFIX = "Known issue:"
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument(
-        '-a', '--artifacts', action='store_true', default=False,
-        help='Download artifacts for build also.')
+        "-a",
+        "--artifacts",
+        action="store_true",
+        default=False,
+        help="Download artifacts for build also.",
+    )
     parser.add_argument(
-        '-O', '--output-dir', type=str, default="./jenkins",
-        help='Directory to write to')
+        "-O",
+        "--output-dir",
+        type=str,
+        default="./jenkins",
+        help="Directory to write to",
+    )
     parser.add_argument(
-        '-s', '--success', action='store_true', default=False,
-        help='Whether to return only the latest successful/good-build')
+        "-s",
+        "--success",
+        action="store_true",
+        default=False,
+        help="Whether to return only the latest successful/good-build",
+    )
     parser.add_argument(
-        '--url', type=str, default=JENKINS_URL,
-        help='the url for jenkins to query')
+        "--url",
+        type=str,
+        default=JENKINS_URL,
+        help="the url for jenkins to query",
+    )
     parser.add_argument(
-        '--username', type=str, help='the username for jenkins')
+        "--username", type=str, help="the username for jenkins"
+    )
     parser.add_argument(
-        '--password', type=str, help='the password for jenkins')
-    parser.add_argument('--verbose', '-v', action='count', default=0)
-    parser.add_argument('jobs', nargs='+', default=[])
+        "--password", type=str, help="the password for jenkins"
+    )
+    parser.add_argument("--verbose", "-v", action="count", default=0)
+    parser.add_argument("jobs", nargs="+", default=[])
     args = parser.parse_args()
 
     server = Jenkins(
-        args.url, timeout=60, username=args.username, password=args.password)
+        args.url, timeout=60, username=args.username, password=args.password
+    )
 
     level = (log.ERROR, log.INFO, log.DEBUG)[min(args.verbose, 2)]
     log.basicConfig(stream=sys.stderr, level=level)
@@ -66,7 +84,8 @@ def main():
         status = build.get_status()
         log.info("%s/%s [%s]", job, build.buildno, status)
         build_d = os.path.sep.join(
-            [args.output_dir, jobname, str(build.buildno)])
+            [args.output_dir, jobname, str(build.buildno)]
+        )
         os.makedirs(name=build_d, exist_ok=True)
         console_path = os.path.sep.join([build_d, "console.log"])
         with open(console_path, "w") as fp:
@@ -84,11 +103,11 @@ def main():
                 with open(zip_file, "wb") as fp:
                     shutil.copyfileobj(response, fp)
             os.chdir(build_d)
-            subprocess.check_output(['unzip', azip_name])
+            subprocess.check_output(["unzip", azip_name])
             os.chdir(start_d)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()
 
 # vi: ts=4 expandtab syntax=python

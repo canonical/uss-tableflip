@@ -7,136 +7,166 @@ upload activity for a given user in each series.
 This is a work in progress
 
 TODO:
-   - db-backed (constantly re-processing the mbox files is dumb, takes 1.5 mins)
+   - db-backed (constantly reprocessing the mbox files takes 1.5 mins)
    - automatically download or re-download mailbox files when not present
 """
 
 import argparse
-from email.parser import Parser
 import json
 import os
-from prettytable import PrettyTable
-import yaml
 import re
-import requests
 import sys
+from email.parser import Parser
+
+from prettytable import PrettyTable
 
 AUTOMATION_EMAILS = [
-    'Ubuntu Developers <ubuntu-devel-discuss@lists.ubuntu.com>']
+    "Ubuntu Developers <ubuntu-devel-discuss@lists.ubuntu.com>"
+]
 HEADER_FMT = "\n\n'{pkg_name}' package uploads by {creator}"
 HEADER_FMT_WIKI = "\n== '{pkg_name}' package uploads by {creator} =="
 
 
-DISTRO_SERIES = ['xenial', 'yakkety', 'zesty', 'artful', 'bionic', 'cosmic']
+DISTRO_SERIES = ["xenial", "yakkety", "zesty", "artful", "bionic", "cosmic"]
 
-UPLOAD_HEADER = r'From bounces@canonical.com.*'
+UPLOAD_HEADER = r"From bounces@canonical.com.*"
 
 
 CHANGES_KEYS = [
-    'Checksums-Sha1', 'Original-Maintainer', 'Changes', 'Description',
-    'Changed-By', 'Maintainer', 'Urgency', 'Distribution', 'Version',
-    'Architecture', 'Binary', 'Source', 'Signed-By', 'Date', 'Format',
-    'http', 'https']
+    "Checksums-Sha1",
+    "Original-Maintainer",
+    "Changes",
+    "Description",
+    "Changed-By",
+    "Maintainer",
+    "Urgency",
+    "Distribution",
+    "Version",
+    "Architecture",
+    "Binary",
+    "Source",
+    "Signed-By",
+    "Date",
+    "Format",
+    "http",
+    "https",
+]
 
-MULTILINE_KEYS = ['CheckSums-Sha1', 'Changes', 'Description']
+MULTILINE_KEYS = ["CheckSums-Sha1", "Changes", "Description"]
 
 
 def process_upload_message(msg_content, emails=None, packages=None):
     msg = Parser().parsestr(msg_content)
     for part in msg.walk():
-        if part.get_content_maintype() != 'multipart':
+        if part.get_content_maintype() != "multipart":
             continue
-        upload = {'Changes': ''}
+        upload = {"Changes": ""}
         [base, changesfile] = part.get_payload()
         base_payload = base.get_payload()
         changes_payload = changesfile.get_payload()
         lines = base_payload.splitlines()
-        header_match = re.match(r'(?P<Source>[^ ]*) \((?P<Version>[^)]*)\) (?P<Distribution>[^;]*);.*', lines[0])
+        header_match = re.match(
+            r"(?P<Source>[^ ]*) \((?P<Version>[^)]*)\)"
+            r" (?P<Distribution>[^;]*);.*",
+            lines[0],
+        )
         if header_match:
             upload.update(header_match.groupdict())
             lines = lines[2:]
-        if 'Sorry, changesfile not available' not in changes_payload:
+        if "Sorry, changesfile not available" not in changes_payload:
             lines += changes_payload.splitlines()
-        key = 'Changes'
+        key = "Changes"
         for line in lines:
-            if '-----BEGIN PGP SIGNATURE-----' in line:
+            if "-----BEGIN PGP SIGNATURE-----" in line:
                 break
-            toks = line.split(':')
+            toks = line.split(":")
             if len(toks) != 1 and toks[0] in CHANGES_KEYS:
                 key = toks[0]
-                if 'http' in key:  # Alias any direct project urls http(s)
-                    upload['URL'] = line
+                if "http" in key:  # Alias any direct project urls http(s)
+                    upload["URL"] = line
                     key = None
                 else:
-                    upload[key] = ':'.join(toks[1:]).strip()
+                    upload[key] = ":".join(toks[1:]).strip()
                     if key not in MULTILINE_KEYS:
-                       key = None  # Ensure we only grab the current line
+                        key = None  # Ensure we only grab the current line
             else:
                 try:
-                    upload[key] += '\n' + line
+                    upload[key] += "\n" + line
                 except KeyError:
                     pass
 
         if emails:
-                uploader = upload.get('Changed-By')
-                if not uploader:
-                    uploader = upload.get('Signed-By')
-                found_email = False
-                for email in emails:
-                    if email in uploader:
-                        found_email = True
-                        break
-                if not found_email:
-                    return {}
-        if packages and upload.get('Source') not in packages:
-               return {}
+            uploader = upload.get("Changed-By")
+            if not uploader:
+                uploader = upload.get("Signed-By")
+            found_email = False
+            for email in emails:
+                if email in uploader:
+                    found_email = True
+                    break
+            if not found_email:
+                return {}
+        if packages and upload.get("Source") not in packages:
+            return {}
         return upload
     return {}
 
 
 def format_publishing_history(history, style="prettytable"):
     """Print human-readable format of package upload history."""
-    if style == 'json':
-        print(json.dumps(
-            history, indent=4, separators=(',', ': ')))
+    if style == "json":
+        print(json.dumps(history, indent=4, separators=(",", ": ")))
         return
     series = None
     for creator, person_history in history.items():
         table = PrettyTable()
         table.field_names = [
-            'Series', 'Version', 'Publish Date', 'Uploader', 'Sponsor']
+            "Series",
+            "Version",
+            "Publish Date",
+            "Uploader",
+            "Sponsor",
+        ]
         for pkg_name, series_data in person_history.items():
-            if style in ('wiki', 'markdown'):
-                print(HEADER_FMT_WIKI.format(
-                    pkg_name=pkg_name, creator=creator))
-            elif style == 'prettytable':
-                print(HEADER_FMT.format(
-                    pkg_name=series, creator=creator))
+            if style in ("wiki", "markdown"):
+                print(
+                    HEADER_FMT_WIKI.format(pkg_name=pkg_name, creator=creator)
+                )
+            elif style == "prettytable":
+                print(HEADER_FMT.format(pkg_name=series, creator=creator))
             for series, pkg_data in sorted(series_data.items()):
                 for version, upload in sorted(pkg_data.items()):
-                    sponsor = upload.get('Signed-By')
+                    sponsor = upload.get("Signed-By")
                     if not sponsor:
-                        sponsor = upload.get('Maintainer')
+                        sponsor = upload.get("Maintainer")
                         if not sponsor or sponsor in AUTOMATION_EMAILS:
-                            sponsor = upload.get('Changed-By')
+                            sponsor = upload.get("Changed-By")
                     table.add_row(
-                        [upload['Distribution'], version, upload['Date'],
-                         creator, sponsor])
-            if style == 'markdown':
+                        [
+                            upload["Distribution"],
+                            version,
+                            upload["Date"],
+                            creator,
+                            sponsor,
+                        ]
+                    )
+            if style == "markdown":
                 # Courtesy https://gist.github.com/dbzm/68256c86c60d70072576
-                table.junction_char = '|'
+                table.junction_char = "|"
                 lines = [
-                    row[1:-1]
-                    for row in table.get_string().split('\n')[1:-1]]
-                print('\n'.join(lines))
-            elif style == 'wiki':
-                print('||%s||' % '||'.join(
-                    [ "'''%s'''" % f for f in table.field_names]))
+                    row[1:-1] for row in table.get_string().split("\n")[1:-1]
+                ]
+                print("\n".join(lines))
+            elif style == "wiki":
+                print(
+                    "||%s||"
+                    % "||".join(["'''%s'''" % f for f in table.field_names])
+                )
                 lines = table.get_string().splitlines()[3:-1]
-                print('\n'.join(line.replace('|', '||') for line in lines))
+                print("\n".join(line.replace("|", "||") for line in lines))
             else:
                 print(table)
-            print('\n')
+            print("\n")
 
 
 def process_mbox_history(stream, history=None, emails=None, packages=None):
@@ -156,7 +186,8 @@ def process_mbox_history(stream, history=None, emails=None, packages=None):
             filtered_history[uploader] = {}
             for pkg_name, series_data in pkg_data.items():
                 matched_packages = [
-                    p_name for p_name in packages if p_name == pkg_name]
+                    p_name for p_name in packages if p_name == pkg_name
+                ]
                 if packages and not matched_packages:
                     continue
                 filtered_history[uploader][pkg_name] = series_data
@@ -165,33 +196,35 @@ def process_mbox_history(stream, history=None, emails=None, packages=None):
     for line in stream.readlines():
         if re.match(UPLOAD_HEADER, line):
             if msg:
-                upload = process_upload_message(''.join(msg), emails, packages)
+                upload = process_upload_message("".join(msg), emails, packages)
                 if upload:
-                    pkg_name = upload.get('Source')
-                    uploader = upload.get('Changed-By')
+                    pkg_name = upload.get("Source")
+                    uploader = upload.get("Changed-By")
                     if not history.get(uploader):
                         history[uploader] = {}
                     if not history[uploader].get(pkg_name):
                         history[uploader][pkg_name] = {}
-                    series = upload.get('Distribution')
+                    series = upload.get("Distribution")
                     if not history[uploader][pkg_name].get(series):
                         history[uploader][pkg_name][series] = {}
-                    history[uploader][pkg_name][series][upload.get('Version')] = upload
+                    history[uploader][pkg_name][series][
+                        upload.get("Version")
+                    ] = upload
             msg = []
         msg.append(line)
     if msg:
-        upload = process_upload_message(''.join(msg), emails, packages)
+        upload = process_upload_message("".join(msg), emails, packages)
         if upload:
-            pkg_name = upload.get('Source')
-            uploader = upload.get('Changed-By')
+            pkg_name = upload.get("Source")
+            uploader = upload.get("Changed-By")
             if not history.get(uploader):
                 history[uploader] = {}
             if not history[uploader].get(pkg_name):
                 history[uploader][pkg_name] = {}
-            series = upload.get('Distribution')
+            series = upload.get("Distribution")
             if not history[uploader][pkg_name].get(series):
                 history[uploader][pkg_name][series] = {}
-            history[uploader][pkg_name][series][upload.get('Version')] = upload
+            history[uploader][pkg_name][series][upload.get("Version")] = upload
     return history
 
 
@@ -199,27 +232,61 @@ def main():
     parser = argparse.ArgumentParser()
 
     parser.add_argument(
-        '-d', '--directory', type=str, default='.',
-        help='Directory in which series-changes mbox files are located')
+        "-d",
+        "--directory",
+        type=str,
+        default=".",
+        help="Directory in which series-changes mbox files are located",
+    )
     parser.add_argument(
-        '-j', '--json-archive', type=str, default=None, dest='json_archive',
-        help='Optionally source pre-existing json-archive of changes instead of mbox archives')
+        "-j",
+        "--json-archive",
+        type=str,
+        default=None,
+        dest="json_archive",
+        help=(
+            "Optionally source pre-existing json-archive of changes instead"
+            " of mbox archives"
+        ),
+    )
     parser.add_argument(
-        '--series', action='append', default=[], choices=DISTRO_SERIES,
-        help='Limit results to a specific series')
-    parser.add_argument('--created-after', type=str, default='2013-01-01',
-                        dest='created_after',
-                        help=('Only report package publishes after this date.'
-                              ' Default: 2013-01-01'))
-    parser.add_argument('--packages', action='append', required=False,
-                        default=[],
-                        help='Limit results to a specific packages.')
+        "--series",
+        action="append",
+        default=[],
+        choices=DISTRO_SERIES,
+        help="Limit results to a specific series",
+    )
     parser.add_argument(
-        '--emails', action='append', required=False, default=[],
-        help='Find package changes related to specific email addresses.')
+        "--created-after",
+        type=str,
+        default="2013-01-01",
+        dest="created_after",
+        help=(
+            "Only report package publishes after this date."
+            " Default: 2013-01-01"
+        ),
+    )
     parser.add_argument(
-        '--format', type=str, required=False, choices=['json', 'markdown', 'wiki'],
-        help='Specify alternative formatting: markdown')
+        "--packages",
+        action="append",
+        required=False,
+        default=[],
+        help="Limit results to a specific packages.",
+    )
+    parser.add_argument(
+        "--emails",
+        action="append",
+        required=False,
+        default=[],
+        help="Find package changes related to specific email addresses.",
+    )
+    parser.add_argument(
+        "--format",
+        type=str,
+        required=False,
+        choices=["json", "markdown", "wiki"],
+        help="Specify alternative formatting: markdown",
+    )
 
     args = parser.parse_args()
 
@@ -231,30 +298,40 @@ def main():
     if args.json_archive:
         if not os.path.exists(args.json_archive):
             print(
-                'Error: json archive {json_file} does not exist'.format(
-                    json_file=args.json_archive))
+                "Error: json archive {json_file} does not exist".format(
+                    json_file=args.json_archive
+                )
+            )
             sys.exit(1)
         history = json.load(open(args.json_archive))
         history = process_mbox_history(
-            stream=None, history=history, emails=args.emails, packages=args.packages)
+            stream=None,
+            history=history,
+            emails=args.emails,
+            packages=args.packages,
+        )
         format_publishing_history(history, args.format)
         return
     for series in all_series:
-        mbox_path = '{directory}/{series}-changes.mbox'.format(
-            directory=args.directory, series=series)
+        mbox_path = "{directory}/{series}-changes.mbox".format(
+            directory=args.directory, series=series
+        )
         if not os.path.exists(mbox_path):
             print(
-               'Download mbox archive file https://lists.ubuntu.com/archives/'
-               '{series}-changes.mbox/{series}-changes.mbox to'
-               ' {mbox_path}'.format(
-                   series=series, mbox_path=mbox_path))
+                "Download mbox archive file https://lists.ubuntu.com/archives/"
+                "{series}-changes.mbox/{series}-changes.mbox to"
+                " {mbox_path}".format(series=series, mbox_path=mbox_path)
+            )
             continue
         with open(mbox_path) as stream:
             process_mbox_history(
-                stream, history=history, emails=args.emails,
-                packages=args.packages)
+                stream,
+                history=history,
+                emails=args.emails,
+                packages=args.packages,
+            )
     format_publishing_history(history, args.format)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()
