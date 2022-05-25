@@ -11,7 +11,14 @@ import textwrap
 
 import gbp.dch
 
-FILTER_CLOUD_INIT_UPSTREAM_COMMITERS = (
+# FILTER_UPSTREAM_COMMMITERS are authors for which to redact [author name]
+# suffix per changelog message. The reason we redact those names as they
+# will be repeated for most changelog entries.
+
+# To override this default filter behavior, copy this file into your project's
+# ./debian/ directory and adapt as needed.
+
+FILTER_UPSTREAM_COMMITERS = (  # cloud-init upstream author names
     "Chad Smith",
     "James Falcon",
     "Brett Holman",
@@ -63,7 +70,7 @@ def format_changelog_entry(commit_info, options, last_commit=False):
     if re.search(r"\(SC-\d+\)", entry[0]):
         # Remove JIRA card references from debian/changelog comments
         entry[0] = re.sub(r"\(SC-\d+\)", "", entry[0])
-    if commit_info["author"].name not in FILTER_CLOUD_INIT_UPSTREAM_COMMITERS:
+    if commit_info["author"].name not in FILTER_UPSTREAM_COMMITERS:
         # Only append non-upstream authors since most committers are upstream
         entry.append(f"[{commit_info['author'].name}]")
     if entry:
