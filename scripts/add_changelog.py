@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 """add_changelog: add unreleased commits to debian/changelog
 
 Use gbp-dch and dch tooling to inject time-ordered changelog comments
@@ -16,7 +17,6 @@ import re
 import sys
 from subprocess import check_output
 
-
 NEW_UPSTREAM_MSG = "New upstream"
 PKG_RELEASE_RE = (
     r"(?P<pkg_name>[^ ]+) \((?P<version>[^)]+)\) (?P<dist>[^;]+);"
@@ -27,6 +27,14 @@ GIT_GBP_CONF = ".git/gbp.conf"
 PACKAGE_GBP_CONF = "debian/gbp.conf"
 PACKAGE_GBP_CUSTOMIZATION = "debian/gbp_format_changelog"
 
+# Passed through to gbp commands
+GBP_ENV_VARS = (
+    "DEBEMAIL",
+    "DEBFULLNAME",
+    "EMAIL",
+    "GBP_DISABLE_SECTION_DEPRECATION",
+    "GBP_DISABLE_GBP_CONF_DEPRECATION",
+)
 DEFAULT_GBP_CONF = os.path.join(os.path.dirname(__file__), "gbp.conf")
 DEFAULT_GBP_CUSTOMIZATION = os.path.join(
     os.path.dirname(__file__), "gbp_format_changelog"
@@ -47,8 +55,13 @@ def get_parser():
 
 def _get_gbp_env():
     """Return a dict of gbp-related environment variables."""
+    gbp_env = {}
+    for env_var_name in GBP_ENV_VARS:
+        if env_var_name in os.environ:
+            gbp_env[env_var_name] = os.environ[env_var_name]
     if not any(
         [
+            "GBP_CONF_FILES" in gbp_env,
             os.path.exists(PACKAGE_GBP_CONF),
             os.path.exists(GIT_GBP_CONF),
         ]
@@ -57,8 +70,8 @@ def _get_gbp_env():
             f"NOTICE: no gbp.conf found in debian/ or .git/."
             f" Using: {DEFAULT_GBP_CONF}"
         )
-        return {"GBP_CONF_FILES": DEFAULT_GBP_CONF}
-    return None
+        gbp_env["GBP_CONF_FILES"] = DEFAULT_GBP_CONF
+    return gbp_env
 
 
 def add_changelog(msg: str, version: str, include_bugs: str = "false"):
@@ -130,7 +143,7 @@ if __name__ == "__main__":
     args = parser.parse_args()
     try:
         check_output(["gbp", "--help"])
-    except:
+    except Exception:
         print(
             f"ERROR: {os.path.basename(__file__)} requires gbp. Run:"
             " sudo apt install git-buildpackage"
