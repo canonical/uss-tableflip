@@ -138,7 +138,7 @@ main() {
                --no-bugs) bug_refs_in_clog=false;;
                --first-devel-upload) bug_refs_in_clog=true; first_devel_upload=true;;
                --first-sru) bug_refs_in_clog=false; first_sru=true;;
-            -v|--verbose) VERBOSITY=$((${VERBOSITY}+1));;
+            -v|--verbose) VERBOSITY=$((VERBOSITY+1));;
             --) shift; break;;
         esac
         shift;
@@ -150,7 +150,7 @@ main() {
         return;
     }
 
-    if [ -z "$DEBFULLNAME" -o -z "$DEBEMAIL" ]; then
+    if [ -z "$DEBFULLNAME" ] || [ -z "$DEBEMAIL" ]; then
         error "Must set DEBFULLNAME and DEBEMAIL per"
         error "  https://www.debian.org/doc/manuals/maint-guide/first.en.html"
         fail
@@ -220,12 +220,7 @@ main() {
     local sru_bug_string=""
     if [ "${is_devel}" = "false" ] && [ "${first_devel_upload}" = "false" ]; then
         sru_bug_string="(LP: #$sru_bug_fillstr)"
-        skip_bugs="true"
     fi
-
-    # turn 0.7.7-10-gbc2c326-0ubuntu1 into 'bc2c326'
-    t=${prev_pkg_ver%-*}
-    prev_pkg_hash=${t##*-g}
 
     new_pkg_debian="0ubuntu1"
     new_upstream_ver=$(git describe --abbrev=8 "${from_ref}")
@@ -300,13 +295,13 @@ main() {
                 git rm "$file" || fail "failed to git rm $file"
                 msg="${msg}$CR  ${file##*/}"
             done
-            git commit -m "$msg" "$dpseries" $drops
+            git commit -m "$msg" "$dpseries" "$drops"
 
             msg="drop the following cherry-picks now included:"
             for file in $drops; do
                 msg="${msg}$CR+${file##*/}"
             done
-            python3 $(dirname $0)/add_changelog.py "${msg}" "${orig_hash}" "${bug_refs_in_clog}" ||
+            python3 "$(dirname "$0")"/add_changelog.py "${msg}" "${orig_hash}" "${bug_refs_in_clog}" ||
                 fail "failed adding changelog entry cherry-pick drops."
             git commit -m "update changelog." debian/changelog ||
                 fail "failed to commit changelog changes for drops."
@@ -369,12 +364,12 @@ main() {
                 echo "refresh patches against ${from_ref} commit" \
                      "${upstream_hash}:"
                 for i in ${refreshed}; do echo "+$i"; done)
-            git commit -m "$msg" $refreshed ||
+            git commit -m "$msg" "$refreshed" ||
                 fail "failed to commit refreshed patches: $refreshed"
             msg=$(
                 echo "refresh patches:"
                 for i in ${refreshed}; do echo "+$i"; done)
-            python3 $(dirname $0)/add_changelog.py "${msg}" "${orig_hash}" "${bug_refs_in_clog}" ||
+            python3 "$(dirname "$0")"/add_changelog.py "${msg}" "${orig_hash}" "${bug_refs_in_clog}" ||
                 fail "failed adding changelog entry for refresh"
             git commit -m "update changelog." debian/changelog ||
                 fail "failed to commit changelog changes."
@@ -382,7 +377,7 @@ main() {
     fi
 
     if [ "$update_patches_only" = "true" ]; then
-        if [ -z "$drops" -a -z "$refreshed" ]; then
+        if [ -z "$drops" ] && [ -z "$refreshed" ]; then
             error "No patches updated. Nothing to commit. restoring to $ORIG_TIP"
             git reset --hard "$ORIG_TIP" ||
                 fail "failed to reset back to start commit $ORIG_TIP"
@@ -405,16 +400,15 @@ main() {
         return 0
     fi
 
-    local clog="${TEMP_D}/changelog" gitlog="${TEMP_D}/gitlog"
     header="$new_msg${sru_bug_string:+ ${sru_bug_string}}"
-    python3 $(dirname $0)/add_changelog.py "${header}" "${new_pkg_ver}" "${bug_refs_in_clog}" || fail
+    python3 "$(dirname "$0")"/add_changelog.py "${header}" "${new_pkg_ver}" "${bug_refs_in_clog}" || fail
 
     dch -e || fail "dch -e exited $?"
 
     if [ "${skip_release}" = "false" ]; then
         if grep -q "SRU_BUG_NUMBER_HERE" debian/changelog; then
             echo "You did not fill in an SRU bug string.  Add one now."
-            read answer
+            read -r answer
             dch -e
             grep -q "$sru_bug_fillstr" debian/changelog &&
                 fail "You didn't fix it (debian/changelog has $sru_bug_string)"
@@ -424,7 +418,7 @@ main() {
     git diff
 
     echo -n "Commit this change? (Y/n): "
-    read answer || fail "failed to read answer"
+    read -r answer || fail "failed to read answer"
     case "$answer" in
         n|[Nn][oO]) fail;;
     esac
@@ -445,7 +439,7 @@ main() {
     else
         prev_dist=${prev_dist%-proposed}
     fi
-    echo wrote new-upstream-changes.txt for $pkg_name version ${new_pkg_ver}.
+    echo wrote new-upstream-changes.txt for "${pkg_name}" version "${new_pkg_ver}".
     if [ "${skip_release}" = "true" ]; then
         cat <<EOF
         push your branch for review:
