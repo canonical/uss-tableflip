@@ -9,14 +9,18 @@ import argparse
 import os
 import subprocess
 import sys
+
 from launchpadlib.launchpad import Launchpad
 
 
 def get_mime_type(path, required=True):
     mtype = None
     try:
-        mtype = subprocess.check_output(
-            ["file", "--brief", "--mime-type", path]).decode('utf-8').strip()
+        mtype = (
+            subprocess.check_output(["file", "--brief", "--mime-type", path])
+            .decode("utf-8")
+            .strip()
+        )
     except (OSError, subprocess.CalledProcessError):
         if required:
             raise
@@ -26,35 +30,72 @@ def get_mime_type(path, required=True):
 def main():
     parser = argparse.ArgumentParser()
 
-    comment_tmpl = 'Attach file {filename}.'
+    comment_tmpl = "Attach file {filename}."
 
-    parser.add_argument('-c', '--comment', action='store',
-                        default=comment_tmpl, help='Provide a comment.',
-                        dest='comment_tmpl')
-    parser.add_argument('-d', '--description', action='store', default=None,
-                        help='Provide a description.')
-    parser.add_argument('-n', '--name', action='store', default=None,
-                        help='Provide a filename. Default is basename(file).')
-    parser.add_argument('-t', '--type', action='store', default=None,
-                        help=('Provide the content_type. Default is to use '
-                              '"file --mime-type" if available.  Pass "none" '
-                              'for explicit None.'),
-                        dest='content_type')
-    parser.add_argument('--dry-run', action='store_true', default=False,
-                        help='only report what would be done')
-    parser.add_argument('--patch', action='store_true', default=False,
-                        help='File is a patch.', dest='is_patch')
-    parser.add_argument('--staging', action='store_true', default=False,
-                        help='Use staging, not production.')
-    parser.add_argument('bug', action='store', default=None,
-                        help='The bug number.', type=int)
-    parser.add_argument('file', action='store', default=None,
-                        help='File to attach.')
+    parser.add_argument(
+        "-c",
+        "--comment",
+        action="store",
+        default=comment_tmpl,
+        help="Provide a comment.",
+        dest="comment_tmpl",
+    )
+    parser.add_argument(
+        "-d",
+        "--description",
+        action="store",
+        default=None,
+        help="Provide a description.",
+    )
+    parser.add_argument(
+        "-n",
+        "--name",
+        action="store",
+        default=None,
+        help="Provide a filename. Default is basename(file).",
+    )
+    parser.add_argument(
+        "-t",
+        "--type",
+        action="store",
+        default=None,
+        help=(
+            "Provide the content_type. Default is to use "
+            '"file --mime-type" if available.  Pass "none" '
+            "for explicit None."
+        ),
+        dest="content_type",
+    )
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        default=False,
+        help="only report what would be done",
+    )
+    parser.add_argument(
+        "--patch",
+        action="store_true",
+        default=False,
+        help="File is a patch.",
+        dest="is_patch",
+    )
+    parser.add_argument(
+        "--staging",
+        action="store_true",
+        default=False,
+        help="Use staging, not production.",
+    )
+    parser.add_argument(
+        "bug", action="store", default=None, help="The bug number.", type=int
+    )
+    parser.add_argument(
+        "file", action="store", default=None, help="File to attach."
+    )
 
     args = parser.parse_args()
 
     if not os.path.isfile(args.file):
-        sys.stderr.write('Error: file %s is not a file\n' % args.file)
+        sys.stderr.write("Error: file %s is not a file\n" % args.file)
         sys.exit(1)
 
     if args.name:
@@ -63,40 +104,42 @@ def main():
         args.filename = os.path.basename(args.file)
     args.comment = args.comment_tmpl.format(filename=args.filename)
 
-    service_root = 'staging' if args.staging else 'production'
+    service_root = "staging" if args.staging else "production"
 
     if args.content_type in (None, "auto"):
         # "auto" here means required use of 'file'
         args.content_type = get_mime_type(
-            args.file, required=args.content_type == "auto")
+            args.file, required=args.content_type == "auto"
+        )
     elif args.content_type.lower() == "none":
         args.content_type = None
 
-    parms = ('comment', 'content_type', 'description', 'filename', 'is_patch')
+    parms = ("comment", "content_type", "description", "filename", "is_patch")
     kwargs = {k: getattr(args, k) for k in parms if getattr(args, k)}
 
-    with open(args.file, 'rb') as fp:
-        kwargs['data'] = fp.read()
+    with open(args.file, "rb") as fp:
+        kwargs["data"] = fp.read()
 
     if args.dry_run:
         pwargs = kwargs.copy()
-        pwargs['data'] = '<content of %s>' % args.file
+        pwargs["data"] = "<content of %s>" % args.file
         sys.stderr.write('Connect to launchpad "%s"\n' % service_root)
-        sys.stderr.write('bugs[%d].addAttachment(%s)\n' % (args.bug, pwargs))
+        sys.stderr.write("bugs[%d].addAttachment(%s)\n" % (args.bug, pwargs))
         sys.exit(0)
 
-    lp = Launchpad.login_with('uss-tableflip', service_root, version='devel')
+    lp = Launchpad.login_with("uss-tableflip", service_root, version="devel")
     try:
         bug = lp.bugs[args.bug]
     except KeyError:
         sys.stderr.write(
-            'Unable to retrieve bug "%d" from launchpad. Check bug number?\n' %
-            args.bug)
+            'Unable to retrieve bug "%d" from launchpad. Check bug number?\n'
+            % args.bug
+        )
         sys.exit(1)
 
     bug.addAttachment(**kwargs)
     sys.stderr.write("Attached %s to bug %s\n" % (args.file, args.bug))
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()

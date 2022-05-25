@@ -10,45 +10,68 @@
 # It will store oauth responses in in CREDS_FILE for reference next run
 
 
-# Example call python /tboard.py --board-name 'Daily Cloud-init/curtin' --list-name 'Done' --label-name cloud-init
+# Example call python /tboard.py --board-name 'Daily Cloud-init/curtin'
+#    --list-name 'Done' --label-name cloud-init
 
 import argparse
 import json
 import os
+
 try:
     from trello import TrelloClient
     from trello.util import create_oauth_token
 except ImportError:
     raise RuntimeError(
-        'Missing py-trello package:\n'
-        'sudo apt install python-pip; sudo pip install py-trello')
+        "Missing py-trello package:\n"
+        "sudo apt install python-pip; sudo pip install py-trello"
+    )
 
 # Add this prefix card comment to set the publishable markdown content,
 # If no doc-comment present, we'll try to use card description or title(name).
-COMMENT_DOC_PREFIX = 'DOC:'
+COMMENT_DOC_PREFIX = "DOC:"
 
-CREDS_FILE = '.trello-creds'  # Where we cache our oauth creds
+CREDS_FILE = ".trello-creds"  # Where we cache our oauth creds
 
 
 def get_parser():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--list-boards', default=False, action='store_true',
-                        dest='list_boards', help='List board details')
-    parser.add_argument('--list-name', dest='list_name',
-                        help='Limit cards reported to a specific named list')
-    parser.add_argument('--board-name', dest='board_name',
-                        help='Limit cards reported to a specific board')
-    parser.add_argument('--label-name', '-l', dest='label_name',
-                        help='Only cards with specific label will be reported')
-    parser.add_argument('--doc', '-d', action='store_true', default=False,
-                        help='Only print the documentation lines for cards.'
-                        ' Default behavior is <linked_bugs>: <doc:_comment>')
+    parser.add_argument(
+        "--list-boards",
+        default=False,
+        action="store_true",
+        dest="list_boards",
+        help="List board details",
+    )
+    parser.add_argument(
+        "--list-name",
+        dest="list_name",
+        help="Limit cards reported to a specific named list",
+    )
+    parser.add_argument(
+        "--board-name",
+        dest="board_name",
+        help="Limit cards reported to a specific board",
+    )
+    parser.add_argument(
+        "--label-name",
+        "-l",
+        dest="label_name",
+        help="Only cards with specific label will be reported",
+    )
+    parser.add_argument(
+        "--doc",
+        "-d",
+        action="store_true",
+        default=False,
+        help="Only print the documentation lines for cards."
+        " Default behavior is <linked_bugs>: <doc:_comment>",
+    )
     return parser
 
-    
 
 def format_board_content(board):
     return board.name
+
 
 CARD_TEMPLATE = """
 ------------------
@@ -63,42 +86,49 @@ URL: {url}
 
 """
 
+
 def format_card_content(card, docs_only=False):
-    bug_prefix = ''
+    bug_prefix = ""
     for attachment in card.fetch_attachments(force=True):
-        if '+bug' in attachment['url']:
-            bug_id = attachment['url'].split('bug/')[-1]
+        if "+bug" in attachment["url"]:
+            bug_id = attachment["url"].split("bug/")[-1]
             if bug_prefix:
-                bug_prefix += '/'  # Separator between bugs
-            bug_prefix += '[LP: #{0}]({1})'.format(bug_id, attachment['url'])
+                bug_prefix += "/"  # Separator between bugs
+            bug_prefix += "[LP: #{0}]({1})".format(bug_id, attachment["url"])
     if bug_prefix:
-        bug_prefix += ': '
-    doc = ''
+        bug_prefix += ": "
+    doc = ""
     for comment in card.fetch_comments(force=True):
-        comment_text = comment.get('data', {}).get('text', '')
+        comment_text = comment.get("data", {}).get("text", "")
         if comment_text.startswith(COMMENT_DOC_PREFIX):
-            doc = comment_text.replace(COMMENT_DOC_PREFIX, '')
+            doc = comment_text.replace(COMMENT_DOC_PREFIX, "")
             break
     if any([bug_prefix, doc]):
-        doc = '- {}{}'.format(bug_prefix, doc)
+        doc = "- {}{}".format(bug_prefix, doc)
     if docs_only:
         return doc
     if not doc:
         doc = card.desc
     try:
-        return CARD_TEMPLATE.format(**{
-            'name': card.name, 'labels': card.list_labels,
-            'desc': card.desc, 'doc': doc, 'url': card.url})
+        return CARD_TEMPLATE.format(
+            **{
+                "name": card.name,
+                "labels": card.list_labels,
+                "desc": card.desc,
+                "doc": doc,
+                "url": card.url,
+            }
+        )
     except UnicodeEncodeError:
-        return 'Error: Could not encode content for card: {}'.format(card.url)
+        return "Error: Could not encode content for card: {}".format(card.url)
 
 
 def label_matches(label, card):
-    '''Return True if label is unset or matches any part of card labels'''
+    """Return True if label is unset or matches any part of card labels"""
     if not label:
         return True
     if card.list_labels:
-        label_names = [l.name for l in card.list_labels]
+        label_names = [line.name for line in card.list_labels]
     else:
         label_names = []
     for label_name in label_names:
@@ -108,32 +138,43 @@ def label_matches(label, card):
 
 
 def get_trello_client():
-    '''Returns configured Trello client.
-    
+    """Returns configured Trello client.
+
     Source .trello-creds if it exists. Otherwise prompt for required env vars.
-    '''
+    """
     if os.path.exists(CREDS_FILE):
         with open(CREDS_FILE) as stream:
             creds = json.loads(stream.read())
     else:
-        if not all([
-            os.environ.get('TRELLO_API_KEY'),
-            os.environ.get('TRELLO_API_SECRET')]):
+        if not all(
+            [
+                os.environ.get("TRELLO_API_KEY"),
+                os.environ.get("TRELLO_API_SECRET"),
+            ]
+        ):
             raise RuntimeError(
-                'Missing either TRELLO_API_KEY or TRELLO_API_SECRET for'
-                ' initialization.\nThey can both be found at'
-                ' https://trello.com/app-key')
-        creds = {'api_key': os.environ.get('TRELLO_API_KEY'),
-                 'api_secret': os.environ.get('TRELLO_API_SECRET')}
+                "Missing either TRELLO_API_KEY or TRELLO_API_SECRET for"
+                " initialization.\nThey can both be found at"
+                " https://trello.com/app-key"
+            )
+        creds = {
+            "api_key": os.environ.get("TRELLO_API_KEY"),
+            "api_secret": os.environ.get("TRELLO_API_SECRET"),
+        }
 
-    if not creds.get('token'):
-        access_token = create_oauth_token(key=creds['api_key'], secret=creds['api_secret'], name='Trello Board Script')
-        creds['token'] = access_token['oauth_token']
-        creds['token_secret'] = access_token['oauth_token_secret']
+    if not creds.get("token"):
+        access_token = create_oauth_token(
+            key=creds["api_key"],
+            secret=creds["api_secret"],
+            name="Trello Board Script",
+        )
+        creds["token"] = access_token["oauth_token"]
+        creds["token_secret"] = access_token["oauth_token_secret"]
         # Save credentials for next run
-        with open(CREDS_FILE, 'w') as stream:
+        with open(CREDS_FILE, "w") as stream:
             stream.write(json.dumps(creds))
     return TrelloClient(**creds)
+
 
 def main():
     parser = get_parser()
@@ -157,5 +198,6 @@ def main():
                 if content:
                     print(content)
 
-if __name__ == '__main__':
+
+if __name__ == "__main__":
     main()
