@@ -19,8 +19,8 @@ from subprocess import check_output
 
 NEW_UPSTREAM_MSG = "New upstream"
 PKG_RELEASE_RE = (
-    "(?P<pkg_name>[^ ]+) \((?P<version>[^)]+)\) (?P<dist>[^;]+);"
-    " urgency=(?P<urgency>\w+).*"
+    r"(?P<pkg_name>[^ ]+) \((?P<version>[^)]+)\) (?P<dist>[^;]+);"
+    r" urgency=(?P<urgency>\w+).*"
 )
 CHANGELOG_FILE = "debian/changelog"
 GIT_GBP_CONF = ".git/gbp.conf"
@@ -72,12 +72,13 @@ def add_changelog(msg: str, version: str, include_bugs: str = "false"):
         # Reconstruct top changelog entry
         _, _, pkg_commitish = pkg_info["version"].partition("g")
         if len(pkg_commitish) == 8:  # Then we have the commitish
-            orig_commitish = pkg_commitish
+            unreleased_commitish = pkg_commitish
         found_snapshot = False
         changelog_count = 0
         for line in full_changelog:
             if re.match(
-                rf"{pkg_info['pkg_name']} .*urgency={pkg_info['urgency']}", line
+                rf"{pkg_info['pkg_name']} .*urgency={pkg_info['urgency']}",
+                line,
             ):
                 changelog_count += 1
             if NEW_UPSTREAM_MSG in line and changelog_count == 1:
@@ -117,17 +118,24 @@ def add_changelog(msg: str, version: str, include_bugs: str = "false"):
         # Skip any bug matches due in changelog entries
         gbp_cmd += ["--meta-closes-bugnum='MATCHNOBUGS'"]
     if NEW_UPSTREAM_MSG in msg:
-        print(f"CHAD {include_bugs} {gbp_cmd}")
         check_output(gbp_cmd, env=_get_gbp_env())
     for msg in unreleased_snapshot_messages:
         check_output(["dch", "-v", version, msg])
-    check_output(["sed", "-i", "s/ \* +/   + /", CHANGELOG_FILE])
-    check_output(["sed", "-i", "s/\*       /    /", CHANGELOG_FILE])
+    check_output(["sed", "-i", "s/ \\* +/   + /", CHANGELOG_FILE])
+    check_output(["sed", "-i", "s/\\*       /    /", CHANGELOG_FILE])
 
 
 if __name__ == "__main__":
     parser = get_parser()
     args = parser.parse_args()
+    try:
+        check_output(["gbp", "--help"])
+    except:
+        print(
+            f"ERROR: {os.path.basename(__file__)} requires gbp. Run:"
+            " sudo apt install git-buildpackage"
+        )
+        sys.exit(1)
     add_changelog(
         msg=args.message, version=args.version, include_bugs=args.include_bugs
     )

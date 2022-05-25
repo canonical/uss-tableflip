@@ -3,26 +3,28 @@
 #
 # It simply uses the built in formatter and linewraps the text
 #
-# Use git-dch --customizations=/usr/share/doc/git-buildpackage/examples/wrap_cl.py
+# Use git-dch --customizations=/<uss_tableflip>/scripts/gbp_format_changelog
 # or set it via gbp.conf
 
-import textwrap
 import re
+import textwrap
+
 import gbp.dch
 
-
 FILTER_CLOUD_INIT_UPSTREAM_COMMITERS = (
-    "Chad Smith", "James Falcon", "Brett Holman"
+    "Chad Smith",
+    "James Falcon",
+    "Brett Holman",
 )
 
 FILTER_NOISY_COMMIT_REGEX = (
-  r'update changelog.*',
-  r'refresh patches against.*',
+    r"update changelog.*",
+    r"refresh patches against.*",
 )
 
 UNWRAPPABLE_DELIMITERS = {
-  "]": "[",
-  ")": "(",
+    "]": "[",
+    ")": "(",
 }
 
 
@@ -44,7 +46,6 @@ def _wrap_on_delimiter(text, prefix="", max_length=70) -> list:
     if text[-1] in UNWRAPPABLE_DELIMITERS:
         delimiter = UNWRAPPABLE_DELIMITERS[text[-1]]
         part1, sep, part2 = text.rpartition(delimiter)
-        remainder = ""
         lines = []
         for part in (part1.rstrip(), f"{sep}{part2}"):
             if lines:
@@ -52,9 +53,7 @@ def _wrap_on_delimiter(text, prefix="", max_length=70) -> list:
                     # Then the previous part plus current part should be joined
                     part = lines.pop() + " " + part
                 part = f" {part}"
-            lines.extend(
-                _wrap_on_delimiter(part, prefix = "" if lines else "+")
-            )
+            lines.extend(_wrap_on_delimiter(part, prefix="" if lines else "+"))
         return lines
     return textwrap.wrap(prefix + text)
 
@@ -64,7 +63,7 @@ def format_changelog_entry(commit_info, options, last_commit=False):
     if re.search(r"\(SC-\d+\)", entry[0]):
         # Remove JIRA card references from debian/changelog comments
         entry[0] = re.sub(r"\(SC-\d+\)", "", entry[0])
-    if commit_info['author'].name not in FILTER_CLOUD_INIT_UPSTREAM_COMMITERS:
+    if commit_info["author"].name not in FILTER_CLOUD_INIT_UPSTREAM_COMMITERS:
         # Only append non-upstream authors since most committers are upstream
         entry.append(f"[{commit_info['author'].name}]")
     if entry:
@@ -72,4 +71,4 @@ def format_changelog_entry(commit_info, options, last_commit=False):
         for filter_re in FILTER_NOISY_COMMIT_REGEX:
             if re.match(filter_re, combined_entry):
                 return None
-        return _wrap_on_delimiter(combined_entry, prefix = "+")
+        return _wrap_on_delimiter(combined_entry, prefix="+")
