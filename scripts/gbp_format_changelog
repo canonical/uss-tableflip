@@ -18,10 +18,6 @@ import gbp.dch
 # To override this default filter behavior, copy this file into your project's
 # ./debian/ directory and adapt as needed.
 
-
-# To filter Jira tickets from "SC" project out of potential changelog comments
-JIRA_PROJECT_KEY = "SC"
-
 FILTER_UPSTREAM_COMMITERS = (  # cloud-init upstream author names
     "Chad Smith",
     "James Falcon",
@@ -32,6 +28,9 @@ FILTER_NOISY_COMMIT_REGEX = (
     r"update changelog.*",
     r"refresh patches against.*",
 )
+
+# To filter Jira tickets from "SC" project out of potential changelog comments
+JIRA_PROJECT_KEY = "SC"
 
 UNWRAPPABLE_DELIMITERS = {
     "]": "[",
@@ -73,7 +72,7 @@ def format_changelog_entry(commit_info, options, last_commit=False):
     entry = gbp.dch.format_changelog_entry(commit_info, options, last_commit)
     if re.search(rf"\({JIRA_PROJECT_KEY}-\d+\)", entry[0]):
         # Remove JIRA card references from debian/changelog comments
-        entry[0] = re.sub(r"\(SC-\d+\)", "", entry[0])
+        entry[0] = re.sub(r"\({JIRA_PROJECT_KEY}-\d+\)", "", entry[0])
     if commit_info["author"].name not in FILTER_UPSTREAM_COMMITERS:
         # Only append non-upstream authors since most committers are upstream
         entry.append(f"[{commit_info['author'].name}]")
