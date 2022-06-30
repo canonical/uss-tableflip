@@ -113,7 +113,7 @@ def add_changelog(msg: str, version: str, include_bugs: str = "false"):
     # Add current msg comment
     gbp_cmd = ["gbp", "dch", "--ignore-branch", f"--new-version={version}"]
     for msg_line in msg.splitlines():
-        check_output(["dch", "-b", "-v", version, msg_line])
+        check_output(["dch", "--nomultimaint", "-b", "-v", version, msg_line])
     if pkg_info["dist"] == "UNRELEASED":
         if not unreleased_commitish:
             _, _, pkg_commitish = pkg_info["version"].partition("g")
@@ -134,8 +134,16 @@ def add_changelog(msg: str, version: str, include_bugs: str = "false"):
         check_output(gbp_cmd, env=_get_gbp_env())
     for msg in unreleased_snapshot_messages:
         check_output(["dch", "-v", version, msg])
+
+    # Post-process some formatting artifacts from gbp_format_changelog
+    # when lines are wrapped or indented for scope.
+    # Redact ndented scope marker from "* +" to " +"
     check_output(["sed", "-i", "s/ \\* +/   + /", CHANGELOG_FILE])
+    # Redact multi-line leading marker "* "
     check_output(["sed", "-i", "s/\\*       /    /", CHANGELOG_FILE])
+    # Prepend the 6th leading space for multi-line wrapped entries if only
+    # 5 are present. Occurs when text-wrapping [Author Name] or (LP #<ID)
+    check_output(["sed", "-i", "/^     [^ ]/{s/^/ /}", CHANGELOG_FILE])
 
 
 if __name__ == "__main__":
