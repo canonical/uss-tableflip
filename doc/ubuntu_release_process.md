@@ -45,6 +45,7 @@ The process goes like this:
 
     $ cd /tmp
     $ git clone git@github.com:canonical/cloud-init.git -o upstream
+    $ cd cloud-init
 
     # create a clean branch tracking upstream/ubuntu/devel
     # for SRU substitute release name 'xenial' for 'devel'
