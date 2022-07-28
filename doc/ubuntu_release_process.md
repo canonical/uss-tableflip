@@ -1,11 +1,11 @@
 ## cloud-init ubuntu packaging ##
 
 This document covers making an upload to Ubuntu of cloud-init.  It generally
-covers releases xenial+.
+covers releases bionic+.
 
 ## Ubuntu packaging branches ##
 Ubuntu packaging is stored as branches in the upstream cloud-init
-repo.  For example, see the ``ubuntu/devel``, ``ubuntu/xenial`` ... branches in the [upstream git repo](https://git.launchpad.net/cloud-init/).  Note that changes to the development release are always done in ubuntu/devel, not ubuntu/<release-name>.
+repo.  For example, see the ``ubuntu/devel``, ``ubuntu/bionic`` ... branches in the [upstream git repo](https://git.launchpad.net/cloud-init/).  Note that changes to the development release are always done in ubuntu/devel, not ubuntu/<release-name>.
 
 Note, that there is also the git-ubuntu cloud-init repo (aka "ubuntu server dev importer") at [lp:~usd-import-team/ubuntu/+source/cloud-init](https://code.launchpad.net/~usd-import-team/ubuntu/+source/cloud-init/+git/cloud-init).
 
@@ -20,7 +20,7 @@ We have high level paths for uploading:
 ### new upstream release/snapshot ###
 This is the *only* mechanism for development release uploads, and the *heavily preferred* mechanism for stable release updates (SRU).
 
-Our goal is (and main integration tests show) that cloud-init works with xenial and beyond.
+Our goal is (and main integration tests show) that cloud-init works with bionic and beyond.
 
 Things that need to be considered:
 
