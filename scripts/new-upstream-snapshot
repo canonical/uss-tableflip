@@ -126,7 +126,7 @@ main() {
     local update_patches_only=false first_devel_upload=false first_sru=false bug_refs_in_clog=true skip_release=false sru_bug_fillstr="SRU_BUG_NUMBER_HERE"
 
     orig_hash=$(git describe --abbrev=8)
-    local cur="" next="" 
+    local cur="" next=""
     while [ $# -ne 0 ]; do
         cur="$1"; next="$2";
         case "$cur" in
@@ -364,7 +364,10 @@ main() {
                 echo "refresh patches against ${from_ref} commit" \
                      "${upstream_hash}:"
                 for i in ${refreshed}; do echo "+$i"; done)
-            git commit -m "$msg" "$refreshed" ||
+            # Having quotes around $refreshed can cause failures.
+            # Please don't add them back unless you've tested on a branch with
+            # refreshed patches
+            git commit -m "$msg" $refreshed ||
                 fail "failed to commit refreshed patches: $refreshed"
             msg=$(
                 echo "refresh patches:"
