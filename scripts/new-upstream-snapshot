@@ -220,6 +220,7 @@ main() {
     local sru_bug_string=""
     if [ "${is_devel}" = "false" ] && [ "${first_devel_upload}" = "false" ]; then
         sru_bug_string="(LP: #$sru_bug_fillstr)"
+        bug_refs_in_clog=false
     fi
 
     new_pkg_debian="0ubuntu1"
