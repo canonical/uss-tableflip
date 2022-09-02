@@ -28,10 +28,10 @@ git pull
 
 
 RELEASE_TIME_SPAN=${RELEASE_TIME_SPAN/ ago/}
-NUM_CONTRIBUTORS=`git log $PREVIOUS_MAJOR_MINOR..HEAD --pretty="%aN" | sort -u | wc -l`
-NUM_DOMAINS=`git log $PREVIOUS_MAJOR_MINOR..HEAD --pretty="%aE" | sort -u | wc -l`
-NUM_BUGS=`git log $PREVIOUS_MAJOR_MINOR..HEAD | log2dch | grep "LP: #" | wc -l`
-CHANGELOG=`git log $PREVIOUS_MAJOR_MINOR..HEAD | log2dch |  sed 's/^   //g'`
+NUM_CONTRIBUTORS=`git log $PREVIOUS_MAJOR_MINOR..$RELEASE_MAJOR_MINOR --pretty="%aN" | sort -u | wc -l`
+NUM_DOMAINS=`git log $PREVIOUS_MAJOR_MINOR..$RELEASE_MAJOR_MINOR --pretty="%aE" | sort -u | wc -l`
+NUM_BUGS=`git log $PREVIOUS_MAJOR_MINOR..$RELEASE_MAJOR_MINOR | log2dch | grep "LP: #" | wc -l`
+CHANGELOG=`git log $PREVIOUS_MAJOR_MINOR..$RELEASE_MAJOR_MINOR | log2dch |  sed 's/^   //g'`
 
 echo "Create upstream release bug at https://bugs.launchpad.net/cloud-init/+filebug"
 
