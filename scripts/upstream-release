@@ -19,12 +19,12 @@ if [ "main" != "$(git branch --show-current)" ]; then
   echo "Changing branch to main and git pull latest upstream (y/n) ?"
   read RESP
   if [ "$RESP" != "y" ]; then
-     echo "Please first change to main branch and pull upstream commits"
-     exit 1
+     echo "Releasing from non-main branch"
+  else
+     git checkout main
+     git pull
   fi
-  git checkout main
 fi
-git pull
 
 
 RELEASE_TIME_SPAN=${RELEASE_TIME_SPAN/ ago/}
