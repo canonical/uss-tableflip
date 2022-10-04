@@ -36,13 +36,6 @@ Send an email to the cloud-init mailing list announcing the upcoming release. Se
 * All outstanding merge proposals have been reviewed for merge
 * CI is green
 
-## Start upstream release bug
-Start creating a process bug in the cloud-init project that captures the new release version, highlights, and changelog.
-
-Use the `upstream-release` script (described in the next section) to generate the bug contents for you.
-
-See [previous release bugs in Launchpad](https://bugs.launchpad.net/cloud-init/+bugs?field.searchtext=Release&orderby=-datecreated&search=Search&field.status%3Alist=FIXRELEASED&field.importance%3Alist=UNDECIDED).
-
 ## Create upstream-release branch
 **SAVE ALL LOCAL CHANGES TO A BRANCH**, then
 ```bash
@@ -53,9 +46,8 @@ git reset upstream/main --hard
 
 Run `uss-tableflip/scripts/upstream-release <release_version> <old_version>` from cloud-init tree with updated main branch.
 The script will:
-* Prompt you to create the bug you created in the previous section (it doesn't create it for you)
-* Generate the contents to be pasted into the bug description. At this point you should finish creating the bug. You can finish the TODO later
-* Prompt you to enter the bug number of the created bug
+
+* Print to stdout the release notes contents to be used later
 * Create a local release branch containing a release commit and an updated changelog
 
 **Note:** If a branch other than main was used or main is out of date,
@@ -70,8 +62,14 @@ the process which fixes this issue.)
 
 Push the branch up for review and create a pull request against main.  We will use that PR for some documentation on things that have been tested.
 
-## Fill in launchpad bug highlights
-Now that your PR is up and ready for review, go back to the launchpad bug you created and fill in the highlights. There's no real formula for this other than a bulleted list of the 5-ish most noteworthy changes this release. Generally this won't include testing or simple bug fixes.
+## Save the release notes
+
+Now that your PR is up and ready for review
+
+* Copy the release notes content minus the changelog to a file called `releasenotes-file` and fill in the highlights.
+* Copy the changelog part to a file called `changelog-file`.
+
+**Note:**  There's no real formula for filling in the highlights other than a bulleted list of the 5-ish most noteworthy changes this release. Generally this won't include testing or simple bug fixes.
 
 ## Merge branch and tag
 After getting approval for your release branch on Github, merge the branch.
@@ -104,8 +102,7 @@ Example of a finished release: https://launchpad.net/cloud-init/trunk/21.3
 
 ### Option 1: Script
 * If [this bug](https://bugs.launchpad.net/lptools/+bug/1974061) is unresolved, skip to Option 2.
-* Copy the changelog (for *just* this release) to a file called 'changelog-file'
-* Copy the release notes (not including changelog) from the launchpad bug to a file called 'releasenotes-file'
+
 ```bash
 $ lp-project-upload cloud-init <version> cloud-init-<version>.tar.gz <NEXT_version> changelog-file releasenotes-file
 ```
@@ -119,12 +116,13 @@ Go to https://launchpad.net/cloud-init/trunk
 Scroll to the bottom of 'Milestones and releases' and click '⨁  Create release'
 
 Fill in details:
+
 * **Don't** keep milestone active
 * Specify current date for 'Date released'
-* Copy the release notes from the bug (minus the changelog) into the 'Release notes' section
-* Copy the changelog from the bug into the 'Changelog' section.
+* Copy the release notes from `releasenotes-file` into the 'Release notes' section
+* Copy the changelog from `changelog-file` into the 'Changelog' section.
 
-After creating the release, on the release page, under **Download files for this release**, click 'Add download file'. Set 'Description' to 'Upstream release of <version>'. Attach the tarball and signature created earlier and click 'Upload'.
+After creating the release, on the release page, under **Download files for this release**, click 'Add download file'. Set 'Description' to 'Upstream release of \<version\>'. Attach the tarball and signature created earlier and click 'Upload'.
 
 Once we have created our release, we should create the milestone for the next release.
 * From https://launchpad.net/cloud-init , under `Series and milestones` (middle of page), click the `trunk` series. If you see no `trunk` series, then click `View full history` and find it there
