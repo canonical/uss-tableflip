@@ -33,16 +33,13 @@ NUM_DOMAINS=`git log $PREVIOUS_MAJOR_MINOR..HEAD --pretty="%aE" | sort -u | wc -
 NUM_BUGS=`git log $PREVIOUS_MAJOR_MINOR..HEAD | log2dch | grep "LP: #" | wc -l`
 CHANGELOG=`git log $PREVIOUS_MAJOR_MINOR..HEAD | log2dch |  sed 's/^   //g'`
 
-echo "Create upstream release bug at https://bugs.launchpad.net/cloud-init/+filebug"
-
-
-echo "The content of the process release bug will be printed to this console."
+echo "The release notes will be printed to this console."
 echo "Continue?"
 read 
 
-echo Summary: Release $RELEASE_MAJOR_MINOR
-echo "Further information:"
 cat << EOF
+Summary: Release $RELEASE_MAJOR_MINOR
+"Further information:"
 == Release Notes ==
 
 Cloud-init release $RELEASE_MAJOR_MINOR is now available
@@ -68,15 +65,11 @@ if [ "$RESP" = "y" ]; then
   printf "%s\n%s\n\n%s\n" "$RELEASE_MAJOR_MINOR" "$CHANGELOG" "$(cat ChangeLog)" > ChangeLog
   sed -i "s/$PREVIOUS_MAJOR_MINOR/$RELEASE_MAJOR_MINOR/" cloudinit/version.py
   git diff
-  echo "Enter the bug ID that was created for this upstream release "
-  read BUG_ID
   cat > commit.msg <<EOF
 Release $RELEASE_MAJOR_MINOR
 
 Bump the version in cloudinit/version.py to $RELEASE_MAJOR_MINOR and
 update ChangeLog.
-
-LP: #$BUG_ID
 EOF
 
   git commit -a -F commit.msg
