@@ -29,13 +29,12 @@ git pull
 
 RELEASE_TIME_SPAN=${RELEASE_TIME_SPAN/ ago/}
 NUM_CONTRIBUTORS=`git log $PREVIOUS_MAJOR_MINOR..HEAD --pretty="%aN" | sort -u | wc -l`
-NUM_DOMAINS=`git log $PREVIOUS_MAJOR_MINOR..HEAD --pretty="%aE" | sort -u | wc -l`
 NUM_BUGS=`git log $PREVIOUS_MAJOR_MINOR..HEAD | log2dch | grep "LP: #" | wc -l`
 CHANGELOG=`git log $PREVIOUS_MAJOR_MINOR..HEAD | log2dch |  sed 's/^   //g'`
 
 echo "The release notes will be printed to this console."
 echo "Continue?"
-read 
+read
 
 cat << EOF
 Summary: Release $RELEASE_MAJOR_MINOR
@@ -46,7 +45,7 @@ Cloud-init release $RELEASE_MAJOR_MINOR is now available
 
 The $RELEASE_MAJOR_MINOR release:
  * spanned about $RELEASE_TIME_SPAN
- * had $NUM_CONTRIBUTORS contributors from $NUM_DOMAINS domains
+ * had $NUM_CONTRIBUTORS contributors
  * fixed $NUM_BUGS Launchpad issues
 
 Highlights:
