@@ -162,7 +162,7 @@ print_dch() {
     local i=""
     aname=${author% <*}
     case "$aname" in
-        Chad\ Smith|Lucas\ Moura|James\ Falcon|Brett\ Holman) aname="";;
+        Chad\ Smith|Lucas\ Moura|James\ Falcon|Brett\ Holman|Alberto\ Contreras) aname="";;
     esac
     abugs="${aname:+ [${aname}]}${bugs:+ (${bug_tracker}: ${bugs})}"
     for filter in "${FILTER_LIST[@]}"; do
