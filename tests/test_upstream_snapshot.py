@@ -51,7 +51,11 @@ def main_setup(tmp_path):
 
     previous_dir = os.getcwd()
     os.chdir(tmp_path)
-    sh("git init -b main")
+    try:
+        sh("git init -b main")
+    except CalledProcessError as e:
+        sh("git init")
+        sh("gi checkout -B main")
 
     # Create main branch
     for i in range(5):
