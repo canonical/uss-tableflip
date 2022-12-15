@@ -9,13 +9,11 @@ repo.  For example, see the ``ubuntu/devel``, ``ubuntu/bionic`` ... branches in 
 
 Note, that there is also the git-ubuntu cloud-init repo (aka "ubuntu server dev importer") at [lp:~usd-import-team/ubuntu/+source/cloud-init](https://code.launchpad.net/~usd-import-team/ubuntu/+source/cloud-init/+git/cloud-init).
 
-
 ## Uploading ##
 We have high level paths for uploading:
 
  * **new upstream release/snapshot**
  * **cherry-picked changes**
-
 
 ### new upstream release/snapshot ###
 This is the *only* mechanism for development release uploads, and the *heavily preferred* mechanism for stable release updates (SRU).
@@ -27,55 +25,34 @@ Things that need to be considered:
  * **backwards incompatible changes.**  Any backwards incompatible changes in upstream must be reverted in a stable release.  Such changes are allowed in the Ubuntu development release, but cannot be SRU'd.  As an example of such a change see [debian/patches/azure-use-walinux-agent.patch](https://git.launchpad.net/cloud-init/tree/debian/patches/azure-use-walinux-agent.patch?h=ubuntu/xenial) in the ``ubuntu/xenial`` branch.  Patches here should be in [dep-8](http://dep.debian.net/deps/dep8/) format.
 
 ### Upstream Snapshot Process
-The tool used to do this is ``uss-tableflip/scripts/new-upstream-snapshot``.
+The tool used to do this is ``uss-tableflip/scripts/new_upstream_snapshot.py``.
 It does almost everything needed with a few issues listed below.
 
-new-upstream-release does:
+new_upstream_snapshot.py does:
 
-  * merges main into the packaging branch so that history is maintained.
-  * strip out core contributors from attribution in the debian changelog entries.
-  * makes changes to debian/patches/series and drops any cherry-picks in that directory.
-  * refreshes any patches in debian/patches/
+* merges main into the packaging branch so that history is maintained.
+* makes changes to debian/patches/series and drops any cherry-picks in that directory.
+* refreshes any patches in debian/patches/
+* updates debian/changelog accordingly.
 
-  * opens $EDITOR with an option to edit debian/changelog.  In SRU, I will generally strip out commits that are not related to ubuntu, and also strip out or join any fix/revert/fixup commits into one.  Note this is a *ubuntu* changelog, so it makes sense that it only have Ubuntu specific things listed.
+In SRU, I will generally strip out commits that are not related to ubuntu, and also strip out or join any fix/revert/fixup commits into one.  Note this is a *ubuntu* changelog, so it makes sense that it only have Ubuntu specific things listed.
 
-  * During SRU regression fixes: use a separate changelog entry from what is already in -proposed and remove the SRU_BUG_NUMBER_HERE from the newest "New upstream snapshot" line.
-
-The process goes like this:
-
-    $ cd /tmp
-    $ git clone git@github.com:canonical/cloud-init.git -o upstream
-    $ cd cloud-init
-
+Assuming your Canonical remote is named 'upstream' and you have cloud-init cloned locally, the process goes like this:
     # create a clean branch tracking upstream/ubuntu/devel
     # for SRU substitute release name 'xenial' for 'devel'
+    $ git fetch upstream
     $ git checkout -B ubuntu/devel upstream/ubuntu/devel
+    $ new_upstream_snapshot.py -c upstream/main
 
-    # 'main' can be left off as it is the default.
-    # Use '--first-devel-upload' if this is the first time we are uploading
-    # to the new Ubuntu devel release, which occurs every 6 months.
-    $ new-upstream-snapshot main [--first-devel-upload]
+    # output then ends with:
+    To release:
+    dch -r -D lunar ''
+    git commit -m 'releasing cloud-init version 22.4.2-0ubuntu2' debian/changelog
+    git tag 22.4.2-0ubuntu2
 
-    ## Your '$EDITOR' will be opened with the chance to change the
-    ## changelog entry.
-    ##   FIXME: If this is a a SRU, then you should ideally edit the packaging
-    ##   portion of the version string to contain ~XX.YY.N
-    ##   For example: 0.7.9-233-ge586fe35-0ubuntu1~16.04.1
-    ##   It will **not** automatically add the '~16.04.1' portion.
-    ##
-    ## Exit from your editor and it will prompt you to commit the change.
-
-    ## output then looks like:
-    [ubuntu/devel aa945427a] update changelog (new upstream snapshot 0.7.9-242-gdc2bd7994).
-    1 file changed, 26 insertions(+)
-    wrote new-upstream-changes.txt for cloud-init version 18.1-1-g45564eef-0ubuntu1~22.04.1.
-    release with:
-    dch --release --distribution=jammy
-    git commit -m "releasing cloud-init version 18.1-1-g45564eef-0ubuntu1~22.04.1" debian/changelog
-    git tag ubuntu/18.1-1-g45564eef-0ubuntu1_22.04.1
+    Don't forget to include any previously released changelogs!
 
     ## You can follow its instructions to release and tag.
-
 
 At this point, you have git in the state we want it in, but we still
 have to do two things:
@@ -162,7 +139,6 @@ The `cherry-pick` will produce 1 or 2 commits on the branch with summary like:
 The `fix-daily-branch` will create a local ubuntu/daily/xenial branch from
 the local ubuntu/xenial branch and revert all debian/patches/*cpick* commits
 
-
 ### Adding a quilt patch to debian/patches ###
 This is generally needed when we are disabling backported feature from tip
 in order to retain existing behavior on an older series.
@@ -224,48 +200,31 @@ there.  From time to time, the patches in the
 ubuntu/$release branch need to be refreshed/updated, or we need
 to provide an upstream snapshot as upstream/main changes.
 
-This is typically done during the new-upstream-release tool process, however,
+This is typically done during the new_upstream_snapshot.py tool process, however,
 new commits to main can break the patches. If a commit to main touches any file
 that has a patch in the debian/patches directory, we'll likely get a
 merge conflict.
 
-When you new-upstream-snapshot, this will fail when quilt
-cannot apply the patch and put you into a subshell and ask you to
-fix and then quit refresh.  The source of the issue is that the release
+When you upstream snapshot, this will fail when quilt
+cannot apply the patch. The tool will bail, and it is now up to you to manually
+refresh any quilt patches.  The source of the issue is that the release
 branch needs the upstream changes to ensure the patch still applies.
-Do the following to fix the patch:
-
-    $ git checkout upstream/ubuntu/$release
-    $ new-upstream-snapshot -v --update-patches-only
-    # quilt will fail here and drop you into a quilt shell "(refresh-fix)"
-    $ (refresh-fix)(hostname) cloud-init % quilt push -f
-    # Perform any changes to any existing cloudinit modules
-    # When applying changes to a file that is not in the original patch,
-    # run `quilt add some/new/file.py` to make sure quilt records any diffs.
-    # Make any changes to some/new/file.py.
-    $ (refresh-fix)(hostname) cloud-init % quilt refresh
-    $ (refresh-fix)(hostname) cloud-init % exit 0
-
-Follow the prompt to commit the updated debian/changelog.
+Follow the "Adding a quilt patch to debian/patches" instructions above to
+fix the issue, then run `new_upstream_snapshot.py --post-stage=quilt`.
 
 To verify this fixes things for the daily build.
 
-    $ git checkout upstream/main -B main
-    $ git merge upstream/ubuntu/$release
-    # Assert quilt patches apply and tox passes
     $ quilt push -a
     $ tox -p auto
     $ quilt pop -a
 
-
 With the patch passing verification, push this branch up for review:
 
-    $ git push <user github repo> ubuntu/$release
+    git push <user github repo> ubuntu/$release
 
 In the github UI, make sure the proposal is pointing to ubuntu/$release
 rather than main.
 
-
 ## Links ##
 
- * [SRU Exception Doc](https://wiki.ubuntu.com/CloudinitUpdates)
+* [SRU Exception Doc](https://wiki.ubuntu.com/CloudinitUpdates)
