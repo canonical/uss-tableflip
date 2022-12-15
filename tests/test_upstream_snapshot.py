@@ -52,10 +52,12 @@ def main_setup(tmp_path):
     previous_dir = os.getcwd()
     os.chdir(tmp_path)
     try:
-        sh("git init -b main")
+        capture("git init -b main")
     except CalledProcessError as e:
-        sh("git init")
-        sh("gi checkout -B main")
+        if 'usage: ' in e.stderr:
+           # Jammy doesn't have a -b switch
+           sh("git init")
+           sh("git checkout -B main")
 
     # Create main branch
     for i in range(5):
