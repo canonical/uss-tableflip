@@ -16,7 +16,7 @@ Usage: ${0##*/} [ options ] <<ARGUMENTS>>
 
    options:
       -h | --help  show help
-      -y | Make changes without asking. Useful for scripting.
+      -y | --yes Make changes without asking. Useful for scripting.
 EOF
 }
 

@@ -12,6 +12,7 @@ import pytest
 
 from scripts.new_upstream_snapshot import (
     ChangelogDetails,
+    CliError,
     capture,
     new_upstream_snapshot,
     sh,
@@ -120,7 +121,7 @@ def series_setup(main_setup):
 
 def test_devel_new_upstream_snapshot_main(devel_setup, capsys):
     sh("git checkout ubuntu/devel")
-    new_upstream_snapshot("main", bug="123456")
+    new_upstream_snapshot("main")
     head = capture("git rev-parse HEAD").stdout
     for commit in devel_setup:
         sh(f"git merge-base --is-ancestor {commit} {head}")
@@ -129,8 +130,7 @@ def test_devel_new_upstream_snapshot_main(devel_setup, capsys):
     assert details.version == "1.0-0ubuntu2"
     assert details.distro == "UNRELEASED"
     assert (
-        f"Upstream snapshot based on main at {devel_setup[-1][:8]}. "
-        "(LP: #123456)"
+        f"Upstream snapshot based on main at {devel_setup[-1][:8]}."
     ) in details.changes
     assert (
         "Bugs fixed in this snapshot: (LP: #123454, #123453, #123452, #123451)"
@@ -298,7 +298,7 @@ def test_series_changelog_from_unreleased(series_setup):
 def test_new_upstream_snapshot_not_found(devel_setup):
     sh("git checkout ubuntu/devel")
     with pytest.raises(
-        RuntimeError, match="Is it a valid commtish or annotated tag"
+        CliError, match="Is it a valid commitish or annotated tag"
     ):
         new_upstream_snapshot("12345678")
 
@@ -385,9 +385,7 @@ def test_refresh_fail(devel_setup):
         "git add debian/patches/new-patch && "
         "git commit -m 'add quilt patch'"
     )
-    with pytest.raises(
-        RuntimeError, match="Failed applying patch 'new-patch'"
-    ):
+    with pytest.raises(CliError, match="Failed applying patch 'new-patch'"):
         new_upstream_snapshot("2.0", no_sru_bug=True)
 
 

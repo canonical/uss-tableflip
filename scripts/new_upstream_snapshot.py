@@ -15,6 +15,7 @@ The commitish defaults to 'main'
 
 import argparse
 import subprocess
+import sys
 from functools import partial
 from pathlib import Path
 from subprocess import CalledProcessError
@@ -33,6 +34,10 @@ QUILT_ENV = {
     "QUILT_REFRESH_ARGS": f"{QUILT_DIFF_ARGS}",
     "LANG": "C",
 }
+
+
+class CliError(Exception):
+    pass
 
 
 class ChangelogDetails(NamedTuple):
@@ -76,7 +81,9 @@ class ChangelogDetails(NamedTuple):
                 changes = results[index + len(line) + 1 :]
                 break
             else:
-                raise RuntimeError(f"Could not parse line: {line}")
+                raise CliError(
+                    f"Could not parse 'debian/changelog' line: {line}"
+                )
         return cls(
             source,
             version,
@@ -102,7 +109,7 @@ def get_changelog_distro():
         if changelog_distro != "UNRELEASED":
             break
     else:
-        raise RuntimeError("Could not determine distro from changelog")
+        raise CliError("Could not determine distro from changelog")
     return changelog_distro
 
 
@@ -142,14 +149,16 @@ def merge_commitish(to: str) -> None:
     try:
         ref_name = capture(f"git describe --abbrev=8 {to}").stdout.strip()
     except CalledProcessError as e:
-        raise RuntimeError(
+        raise CliError(
             f"'git describe' failed for {to}. "
-            "Is it a valid commtish or annotated tag?"
+            "Is it a valid commitish or annotated tag?"
         ) from e
 
+    if to == "upstream/main":
+        capture("git fetch upstream")
     command = f'git merge {to} -m "merge from {to} at {ref_name}"'
     print(f"Running: {command}")
-    sh(command)
+    capture(command)
 
 
 def drop_cpicks(commitish):
@@ -204,7 +213,7 @@ def refresh_patches(commitish):
             sh(f"{QUILT_COMMAND} refresh", env=QUILT_ENV)
     except CalledProcessError as e:
         failed_patch = capture(f"{QUILT_COMMAND} next").stdout.strip()
-        raise RuntimeError(
+        raise CliError(
             f"Failed applying patch '{failed_patch}'. Patch must be refreshed "
             "manually. When you can successfully "
             "'quilt push -a && quilt pop -a' rerun this script with "
@@ -212,7 +221,7 @@ def refresh_patches(commitish):
         ) from e
     rc = sh(f"{QUILT_COMMAND} pop -a", check=False).returncode
     if rc not in [0, 2]:  # 2 means there were no quilt patches to pop
-        raise RuntimeError(f"'quilt pop -a' unexpectedly returned {rc}.")
+        raise CliError(f"'quilt pop -a' unexpectedly returned {rc}.")
 
     # Now commit the refreshed patches
     patches = capture(
@@ -397,7 +406,7 @@ def add_msg_to_changelog(msg):
     changelog_path = Path("debian/changelog")
     changelog = changelog_path.read_text()
     if changelog.count("  *\n") != 1:
-        raise RuntimeError(
+        raise CliError(
             "debian/changelog has more than one blank changelog entry. "
             "Not sure how to proceed."
         )
@@ -422,7 +431,7 @@ def get_series_suffix(old_version):
     elif old_version.count("~") == 1:
         old_series_suffix = old_version.split("~")[1]
     else:
-        raise RuntimeError(
+        raise CliError(
             "Don't know what to do with multiple '~' in version number"
         )
 
@@ -457,7 +466,7 @@ def get_possible_devel_options(
     is_devel = is_first_devel_upload = known_first_devel_upload
     is_first_sru = known_first_sru
     if is_first_devel_upload and is_first_sru:
-        raise RuntimeError(
+        raise CliError(
             "Can't simultaneously be first SRU and first devel upload"
         )
     if (
@@ -516,7 +525,7 @@ def new_upstream_snapshot(
     known_first_devel_upload: bool = False,
     no_sru_bug: bool = False,
     known_first_sru: bool = False,
-    post_patch: bool = False,
+    post_stage: str = None,
 ) -> None:
     """Perform a new upstream snapshot.
 
@@ -527,9 +536,18 @@ def new_upstream_snapshot(
      - Update the changelog accordingly
      - Tell user how to release this update
     """
+    if not Path("debian/changelog").exists():
+        raise CliError(
+            "No debian/changelog found. Are we in the right dir or branch?"
+        )
+
     env = EnvDetails.get()
-    if not post_patch:
+    skip_past_merge = post_stage in {"merge", "patch"}
+    skip_past_patch = post_stage == "merge"
+
+    if not skip_past_merge:
         merge_commitish(commitish)
+    if not skip_past_patch:
         drop_cpicks(commitish)
         refresh_patches(commitish)
 
@@ -537,7 +555,7 @@ def new_upstream_snapshot(
     is_devel, first_devel_upload, first_sru = get_possible_devel_options(
         known_first_devel_upload, known_first_sru, env
     )
-    bug = get_sru_bug(bug, no_sru_bug)
+    bug = None if is_devel else get_sru_bug(bug, no_sru_bug)
 
     update_changelog(
         commitish, bug, env, is_devel, first_devel_upload, first_sru
@@ -557,7 +575,7 @@ def parse_args() -> argparse.Namespace:
         "-c",
         "--commitish",
         required=False,
-        default="main",
+        default="upstream/main",
         type=str,
         help="Commitish (tag, branch name, or commit) to merge to",
     )
@@ -573,7 +591,7 @@ def parse_args() -> argparse.Namespace:
         "--first-devel-upload",
         required=False,
         default=False,
-        type=bool,
+        action="store_true",
         help=(
             "Provide this flag when this is the first upload to a devel "
             "series. It will determine the right version suffix. If not "
@@ -584,20 +602,21 @@ def parse_args() -> argparse.Namespace:
         "-n",
         "--no-sru-bug",
         required=False,
-        type=bool,
+        action="store_true",
         help=("Do not add (or prompt for) SRU bug reference."),
     )
     parser.add_argument(
         "-p",
-        "--post-patch",
+        "--post-stage",
         required=False,
-        default=False,
-        type=bool,
+        default=None,
+        type=str,
+        choices=["merge", "quilt"],
         help=(
             "Run with this flag if script previously failed because you had "
-            "to manually refresh quilt patches. It assumes the first steps "
-            "have already been run and will update the changelog "
-            "and display release instructions. "
+            "to manually fix the branch due to a merge or having to refresh "
+            "quilt patches. It assumes the steps prior to and including "
+            "this stage have already been run the remaining steps accordingly."
         ),
     )
     parser.add_argument(
@@ -605,7 +624,7 @@ def parse_args() -> argparse.Namespace:
         "--first-sru",
         required=False,
         default=False,
-        type=bool,
+        action="store_true",
         help=(
             "Provide this flag when this is the first SRU to a series. "
             "It will determine the right version suffix. If not provided, "
@@ -617,11 +636,15 @@ def parse_args() -> argparse.Namespace:
 
 if __name__ == "__main__":
     args = parse_args()
-    new_upstream_snapshot(
-        args.commitish,
-        args.bug,
-        args.first_devel_upload,
-        args.no_sru_bug,
-        args.first_sru,
-        args.post_patch,
-    )
+    try:
+        new_upstream_snapshot(
+            args.commitish,
+            args.bug,
+            args.first_devel_upload,
+            args.no_sru_bug,
+            args.first_sru,
+            args.post_stage,
+        )
+    except CliError as e:
+        print(e)
+        sys.exit(1)
