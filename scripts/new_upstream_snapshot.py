@@ -113,27 +113,6 @@ def get_changelog_distro():
     return changelog_distro
 
 
-class EnvDetails(NamedTuple):
-    # This is a sloppy abstraction to avoid passing so much stuff around
-    changelog_details: ChangelogDetails
-    devel_distro: str
-    changelog_distro: str
-    head: str
-
-    @classmethod
-    def get(cls):
-        changelog_details = ChangelogDetails.get()
-        devel_distro = capture("distro-info --devel").stdout.strip()
-        changelog_distro = get_changelog_distro()
-        head = capture("git rev-parse HEAD").stdout.strip()
-        return cls(
-            changelog_details,
-            devel_distro,
-            changelog_distro,
-            head,
-        )
-
-
 def remove_line_from_file(filename, text):
     """Utility function to remove a single line from a file."""
     with open(filename, "r") as f:
@@ -281,7 +260,7 @@ def format_devel_bugs_fixed(bugs_fixed):
     return "\n".join(bugs_fixed_lines)
 
 
-def get_changelog_message(commitish, old_head, bug, is_upstream_tag, is_devel):
+def get_changelog_message(commitish, bug, is_upstream_tag, is_devel):
     """Get the "changes" message for d/changelog.
 
     This will vary based on if the commitish is an upstream tag, if there's
@@ -313,7 +292,7 @@ def get_changelog_message(commitish, old_head, bug, is_upstream_tag, is_devel):
         release_text = ""
     bug_text = f" (LP: #{bug})." if bug else ""
     bugs_fixed_msg = ""
-    bugs_fixed = list(get_bugs_fixed_devel(old_head))
+    bugs_fixed = list(get_bugs_fixed_devel())
     if is_devel and bugs_fixed:
         bugs_fixed_msg = format_devel_bugs_fixed(bugs_fixed)
     return (
@@ -322,20 +301,35 @@ def get_changelog_message(commitish, old_head, bug, is_upstream_tag, is_devel):
     )
 
 
-def get_bugs_fixed_devel(old_head):
+def get_original_head():
+    """Get the original head before the upstream snapshot merge"""
+    for i in range(5):
+        commitish = f"HEAD~{i}"
+        if capture(f"git cat-file -p {commitish}").stdout.count("parent") > 1:
+            return f"HEAD~{i+1}"
+    raise CliError("No recent merge. Can't continue")
+
+
+def get_bugs_fixed_devel():
     """Get all bugs fixed in this upstream snapshot.
 
     Search for any `LP: #` in the git log for commits between the original
     branch HEAD and the new branch HEAD.
     """
-    commit_msgs = capture(f"git log {old_head}..HEAD").stdout.strip()
+    orig_head = get_original_head()
+    commit_msgs = capture(f"git log {orig_head}..HEAD").stdout.strip()
     for line in commit_msgs.splitlines():
         if line.strip().startswith("LP: #"):
             yield line.split("LP: #")[1].strip()
 
 
 def update_changelog(
-    commitish, bug, env: EnvDetails, is_devel, first_devel_upload, first_sru
+    commitish,
+    bug,
+    changelog_details: ChangelogDetails,
+    is_devel,
+    first_devel_upload,
+    first_sru,
 ):
     """Update the changelog with the new details.
 
@@ -344,13 +338,13 @@ def update_changelog(
     commit.. We fill it in ourselves because the `dch` formatting sucks.
     """
     print("Updating changelog")
-    old_version = env.changelog_details.version
-    previously_unreleased = env.changelog_details.distro == "UNRELEASED"
+    old_version = changelog_details.version
+    previously_unreleased = changelog_details.distro == "UNRELEASED"
     commitish_is_upstream_tag = is_commitish_upstream_tag(commitish)
     old_series_suffix = get_series_suffix(old_version)
 
     msg = get_changelog_message(
-        commitish, env.head, bug, commitish_is_upstream_tag, is_devel
+        commitish, bug, commitish_is_upstream_tag, is_devel
     )
 
     # Determine new changelog version
@@ -438,9 +432,9 @@ def get_series_suffix(old_version):
     return old_series_suffix
 
 
-def show_release_steps(env: EnvDetails, is_devel):
+def show_release_steps(changelog_details, devel_distro, is_devel):
     """Because we all like automation telling us to do more things."""
-    series = env.devel_distro if is_devel else env.changelog_details.distro
+    series = devel_distro if is_devel else changelog_details.distro
     new_version = ChangelogDetails.get().version
     print("To release:")
     print(f"dch -r -D {series} ''")
@@ -454,8 +448,8 @@ def show_release_steps(env: EnvDetails, is_devel):
 
 
 def get_possible_devel_options(
-    known_first_devel_upload, known_first_sru, env
-) -> Tuple[bool, bool, bool]:
+    known_first_devel_upload, known_first_sru, changelog_details
+) -> Tuple[str, bool, bool, bool]:
     """Determine if we're on devel and our options for the devel branch.
 
     If we're on a devel branch and the changelog distro doesn't match
@@ -465,6 +459,7 @@ def get_possible_devel_options(
     """
     is_devel = is_first_devel_upload = known_first_devel_upload
     is_first_sru = known_first_sru
+    devel_distro = capture("distro-info --devel").stdout.strip()
     if is_first_devel_upload and is_first_sru:
         raise CliError(
             "Can't simultaneously be first SRU and first devel upload"
@@ -472,21 +467,22 @@ def get_possible_devel_options(
     if (
         not known_first_devel_upload
         and not known_first_sru
-        and "~" not in env.changelog_details.version
+        and "~" not in changelog_details.version
     ):
+        changelog_distro = get_changelog_distro()
         is_devel = True
-        if env.devel_distro != env.changelog_distro:
+        if devel_distro != changelog_distro:
             # Changelog shows devel release numbers, but not the current devel
             # release. We need to know whether this is a new devel upload
             # or the first SRU upload for a series.
             print(
                 f"d/changelog shows current devel distro as "
-                f"{env.changelog_distro}, yet `distro-info` says it is "
-                f"{env.devel_distro}."
+                f"{changelog_distro}, yet `distro-info` says it is "
+                f"{devel_distro}."
             )
             if (
                 input(
-                    f"Is this the first devel upload for {env.devel_distro} "
+                    f"Is this the first devel upload for {devel_distro} "
                     "(y/N)? "
                 ).lower()
                 == "y"
@@ -495,14 +491,14 @@ def get_possible_devel_options(
                 is_first_devel_upload = True
             elif (
                 input(
-                    f"Is this the first SRU for series {env.changelog_distro} "
+                    f"Is this the first SRU for series {changelog_distro} "
                     "(y/N)? "
                 ).lower()
                 == "y"
             ):
                 is_devel = False
                 is_first_sru = True
-    return is_devel, is_first_devel_upload, is_first_sru
+    return devel_distro, is_devel, is_first_devel_upload, is_first_sru
 
 
 def get_sru_bug(bug, no_sru_bug):
@@ -525,7 +521,7 @@ def new_upstream_snapshot(
     known_first_devel_upload: bool = False,
     no_sru_bug: bool = False,
     known_first_sru: bool = False,
-    post_stage: str = None,
+    post_stage: Optional[str] = None,
 ) -> None:
     """Perform a new upstream snapshot.
 
@@ -541,7 +537,7 @@ def new_upstream_snapshot(
             "No debian/changelog found. Are we in the right dir or branch?"
         )
 
-    env = EnvDetails.get()
+    old_changelog_details = ChangelogDetails.get()
     skip_past_merge = post_stage in {"merge", "patch"}
     skip_past_patch = post_stage == "merge"
 
@@ -552,15 +548,27 @@ def new_upstream_snapshot(
         refresh_patches(commitish)
 
     # If arguments haven't been passed, we have a few things to determine
-    is_devel, first_devel_upload, first_sru = get_possible_devel_options(
-        known_first_devel_upload, known_first_sru, env
+    (
+        devel_distro,
+        is_devel,
+        first_devel_upload,
+        first_sru,
+    ) = get_possible_devel_options(
+        known_first_devel_upload=known_first_devel_upload,
+        known_first_sru=known_first_sru,
+        changelog_details=old_changelog_details,
     )
     bug = None if is_devel else get_sru_bug(bug, no_sru_bug)
 
     update_changelog(
-        commitish, bug, env, is_devel, first_devel_upload, first_sru
+        commitish,
+        bug,
+        old_changelog_details,
+        is_devel,
+        first_devel_upload,
+        first_sru,
     )
-    show_release_steps(env, is_devel)
+    show_release_steps(old_changelog_details, devel_distro, is_devel)
 
 
 def parse_args() -> argparse.Namespace:
