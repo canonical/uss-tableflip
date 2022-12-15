@@ -616,7 +616,8 @@ def parse_args() -> argparse.Namespace:
             "Run with this flag if script previously failed because you had "
             "to manually fix the branch due to a merge or having to refresh "
             "quilt patches. It assumes the steps prior to and including "
-            "this stage have already been run the remaining steps accordingly."
+            "this stage have already been run and will run the remaining "
+            "steps accordingly."
         ),
     )
     parser.add_argument(
