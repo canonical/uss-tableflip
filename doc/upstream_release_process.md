@@ -21,10 +21,6 @@ To avoid repetitive names in the cloud-init changelog, core contributors' names 
 
 New core contributors should add themselves to the list in the following locations:
 * [log2dch](https://github.com/canonical/uss-tableflip/blob/main/scripts/log2dch)
-* [gbp_format_changelog](https://github.com/canonical/uss-tableflip/blob/main/scripts/gbp_format_changelog)
-
-**NOTE:** `new-upstream-snapshot` uses git-buildpackage to generate debian/changelog entries. For project customization, copy `scripts/add_changelog.py`, `scripts/gbp_format_changelog` and `scripts/gbp.conf` into your project's **debian/** directory.
-
 
 # Pre-release
 ## Send pre-release email to mailing list
@@ -139,7 +135,6 @@ Once we have created our release, we should create the milestone for the next re
 * Use the "Release Highlights" from the email/launchpad/discourse posts as the description ([example here](https://github.com/canonical/cloud-init/releases/tag/22.2))
 * Click 'Publish release' (double check this was done, last time it ended up in "draft" state)
 
-
 ## Close bugs
 Any Launchdpad bugs that were listed in the git commit messages from this release should be marked as 'fix-released' now.
 
@@ -176,12 +171,11 @@ Questions to ask / answer:
 
 These checks should be automatable.
 
-
 ## Upload to ubuntu/devel
 ```bash
 $ git fetch upstream
 $ git checkout upstream/ubuntu/devel -B ubuntu/devel
-$ new-upstream-snapshot  # add the Release LP: #
+$ new_upstream_snapshot.py  # add the Release LP: #
 $ <run whatever commands new-upstream-snapshot tells you to run next to finish the release>
 ```
 
