@@ -470,13 +470,14 @@ def show_release_steps(changelog_details, devel_distro, is_devel):
     m = re.match(
         r"^(?P<package_version>\d+\.\d+(\.\d+)?).*", changelog_details.version
     )
+    new_tag = new_version.replace("~", "_")
     print("To release:")
     print(f"dch -r -D {series} ''")
     print(
         f"git commit -m 'releasing cloud-init version {new_version}' "
         "debian/changelog"
     )
-    print(f"git tag {new_version}")
+    print(f"git tag {new_tag}")
     print("")
     print(
         "Don't forget to include previously released changelogs from "
