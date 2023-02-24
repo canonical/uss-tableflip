@@ -190,18 +190,23 @@ def refresh_patches(commitish) -> bool:
     """
     print("Attempting to automatically refresh quilt patches")
     try:
-        while sh(f"{QUILT_COMMAND} next", check=False).returncode == 0:
-            sh(f"{QUILT_COMMAND} push")
+        while (
+            sh(f"{QUILT_COMMAND} next", check=False, env=QUILT_ENV).returncode
+            == 0
+        ):
+            sh(f"{QUILT_COMMAND} push", env=QUILT_ENV)
             sh(f"{QUILT_COMMAND} refresh", env=QUILT_ENV)
     except CalledProcessError as e:
-        failed_patch = capture(f"{QUILT_COMMAND} next").stdout.strip()
+        failed_patch = capture(
+            f"{QUILT_COMMAND} next", env=QUILT_ENV
+        ).stdout.strip()
         raise CliError(
             f"Failed applying patch '{failed_patch}'. Patch must be refreshed "
             "manually. When you can successfully "
             "'quilt push -a && quilt pop -a' rerun this script with "
             "'--post quilt' argument."
         ) from e
-    rc = sh(f"{QUILT_COMMAND} pop -a", check=False).returncode
+    rc = sh(f"{QUILT_COMMAND} pop -a", check=False, env=QUILT_ENV).returncode
     if rc not in [0, 2]:  # 2 means there were no quilt patches to pop
         raise CliError(f"'quilt pop -a' unexpectedly returned {rc}.")
 
