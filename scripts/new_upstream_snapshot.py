@@ -471,6 +471,9 @@ def show_release_steps(changelog_details, devel_distro, is_devel):
         r"^(?P<package_version>\d+\.\d+(\.\d+)?).*", changelog_details.version
     )
     new_tag = new_version.replace("~", "_")
+    if "ubuntu" in new_tag and not new_tag.startswith("ubuntu/"):
+        new_tag = f"ubuntu/{new_tag}"
+
     print("To release:")
     print(f"dch -r -D {series} ''")
     print(
