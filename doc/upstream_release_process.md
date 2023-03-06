@@ -1,4 +1,7 @@
-This covers the cloud-init upstream release process.
+# USE PROJECT BOARD INSTEAD
+
+Everything here has been reflected to the [project board](https://github.com/orgs/canonical/projects/29/views/1). This page will no longer be maintained.
+
 
 # Assumptions
 ## cloud-init
