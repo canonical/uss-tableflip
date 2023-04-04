@@ -2,9 +2,12 @@
 # https://gist.github.com/smoser/6391b854e6a80475aac473bba4ef0310
 
 VERBOSITY=0
+ASSUME_YES=false
 TEMP_D=""
 START_D="$PWD"
 FORMATS=".tar.gz .tar.xz .tar.bz2"
+
+MSG_BORDER_LINE="========================================"
 
 cleanup(){
     [ ! -d "$TEMP_D" ] || rm -Rf "$TEMP_D";
@@ -26,6 +29,19 @@ EOF
 }
 
 bad_Usage() { Usage 1>&2; [ $# -eq 0 ] || error "$@"; return 1; }
+
+prompt_yes_no() {
+    echo -n "$@" "? (y/n) "
+    if [ "${ASSUME_YES}" = "true" ]; then
+        echo "--yes"
+        return 0
+    fi
+    read RESP
+    if [ "${RESP}" = "y" ]; then
+        return 0
+    fi
+    return 1
+}
 
 debug() {
     local level=${1}; shift;
@@ -99,9 +115,31 @@ get_genchanges_version() {
     fi
 }
 
+get_orig_tarball() {
+    local changelog_file="$1" dir="${2:-..}" offset="$3" verbose="$4"
+    local tarball_fp
+    if ! get-orig-tarball "${changelog_file}" "${dir}" ${offset:+--offset=${offset}} $verbose; then
+        error "failed to get orig tarball for $pkg_name at $pkg_ver"
+        return 1
+    fi
+    tarball_fp=$(find_orig "${pkg_name}" "${upstream_ver}" "${dir}")
+    if [ -z "${tarball_fp}" ]; then
+        error "did not get a tarball at $upstream_ver with get-orig-tarball"
+        return 1
+    elif [ ! -f "$tarball_fp" ]; then
+        error "orig tarball not a file: $tarball_fp"
+        return 1
+    fi
+    error ${MSG_BORDER_LINE}
+    error " Using orig tarball in $tarball_fp"
+    sha256sum "${orig_tarball_fp}"
+    echo ${MSG_BORDER_LINE}
+    return 0
+}
+
 main() {
-    local short_opts="ho:v"
-    local long_opts="help,output:,offset:,ref:,verbose"
+    local short_opts="ho:vy"
+    local long_opts="help,output:,offset:,ref:,yes,verbose"
     local getopt_out=""
     getopt_out=$(getopt --name "${0##*/}" \
         --options "${short_opts}" --long "${long_opts}" -- "$@") &&
@@ -117,6 +155,7 @@ main() {
                --offset) offset=$next; shift;;
             -o|--output) out_d=$next; shift;;
             -v|--verbose) VERBOSITY=$((${VERBOSITY}+1));;
+            -y|--yes) ASSUME_YES=true;;
                --ref) ref=$next; shift;;
             --) shift; break;;
         esac
@@ -178,7 +217,23 @@ main() {
         local orig_tarball_fp="" orig_tarball_fp=""
         orig_tarball_fp=$(find_orig "${pkg_name}" "${upstream_ver}" .. ../dl)
         if [ -n "$orig_tarball_fp" ]; then
-            error "Using existing orig tarball in $orig_tarball_fp"
+            tarball_dir=$(dirname "$orig_tarball_fp")
+            if [ "${tarball_dir}" = "../dl" ]; then
+                # Download and compare this tarball with latest upstream
+                if ! get_orig_tarball debian/changelog ../dl "${offset}"; then
+                    if ! prompt_yes_no "No upstream tarball for ${upstream_ver}, should we" \
+                           "create a new orig.tar.gz from the local branch"; then
+                        fail "No upstream tarball found for ${upstream_ver}"
+                    fi
+                fi
+            fi
+            if ! prompt_yes_no "Proceed with build-package"; then
+                tar_dir=$(dirname "${orig_tarball_fp}")
+                error "Canceled build-package."
+                error "To replace orig.tar.gz with latest upstream:"
+                error "  get-orig-tarball debian/changelog ${tar_dir} -v"
+                exit 0
+            fi
         elif [ -x tools/make-tarball ]; then
             if [ ! -d "../dl" ]; then
                 mkdir ../dl ||
@@ -187,19 +242,28 @@ main() {
             fi
             orig_tarball="${pkg_name}_$(no_epoch "${upstream_ver}").orig.tar.gz"
             orig_tarball_fp="../dl/$orig_tarball"
-            error "creating $orig_tarball_fp using" \
-                "make-tarball --output=$orig_tarball_fp $upstream_hash"
-            ./tools/make-tarball "--output=$orig_tarball_fp" "$upstream_hash" ||
-                fail "failed to make tarball"
+            if prompt_yes_no "Check for an upstream cloud-init_${upstream_ver}.orig.tar.gz on which to base this debdiff"; then
+                if ! get_orig_tarball debian/changelog ../dl "${offset}"; then
+                   error ${MSG_BORDER_LINE}
+                   error " No cloud-init_${upstream_ver}.orig.tar.gz found"
+                   error "Creating $orig_tarball_fp using" \
+                   "make-tarball --output=$orig_tarball_fp $upstream_hash"
+                   error ${MSG_BORDER_LINE}
+                   sleep 1
+                   ./tools/make-tarball "--output=$orig_tarball_fp" "$upstream_hash" ||
+                       fail "failed to make tarball"
+                fi
+            else
+                error ${MSG_BORDER_LINE}
+                sleep 1
+                ./tools/make-tarball "--output=$orig_tarball_fp" "$upstream_hash" ||
+                    fail "failed to make tarball"
+                error ${MSG_BORDER_LINE}
+            fi
         else
-            get-orig-tarball -v ${offset:+--offset=${offset}} ||
-                fail "failed to get orig tarball for $pkg_name at $pkg_ver"
-            orig_tarball_fp=$(find_orig "${pkg_name}" "${upstream_ver}" ..)
-            [ -n "$orig_tarball_fp" ] ||
-                fail "did not get a tarball with get-orig-tarball"
-            [ -f "$orig_tarball_fp" ] ||
-                fail "orig tarball not a file: $orig_tarball_fp"
-            error "using orig tarball $orig_tarball_fp"
+            if ! get_orig_tarball "" "${offset}" -v; then
+                fail ""
+            fi
         fi
 
         local ofp_name
