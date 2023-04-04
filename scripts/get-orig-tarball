@@ -5,6 +5,9 @@ TEMP_D=""
 FORMATS=".tar.gz .tar.xz .tar.bz2"
 DSC_UBUNTU_BASE_URL="http://launchpad.net/ubuntu/+archive/primary/+files"
 DSC_DEBIAN_BASE_URL="http://launchpad.net/debian/+archive/primary/+files"
+MSG_BORDER_LINE="========================================"
+
+
 
 error() { echo "$@" 1>&2; }
 fail() { [ $# -eq 0 ] || error "$@"; exit 1; }
@@ -271,12 +274,6 @@ main() {
 dl_to_dir() {
     local src="$1" ver="$2" odir="$3" overwrite=${4:-false} orig=""
     local uver="${ver%-*}"
-    if orig=$(find_orig "$src" "$uver" "$odir"); then
-        if ! $overwrite; then
-            error "orig tarball existed at $orig. --overwrite to overwrite."
-            return 0;
-        fi
-    fi
 
     get_dsc_url "$src" "$ver" || return
     dsc_url=$_RET
@@ -298,13 +295,43 @@ dl_to_dir() {
         return 1
     }
 
-    orig=$(find_orig "$src" "$uver" "$TEMP_D") || {
+    upstream_orig=$(find_orig "$src" "$uver" "$TEMP_D") || {
         error "dget succeeded, but no orig tarball found."
         cat "$TEMP_D/${src}_${ver}.dsc" 1>&2
         ls $TEMP_D 1>&2;
         cd "$sdir"
         return 1
     }
+
+    if orig=$(find_orig "$src" "$uver" "$odir"); then
+        ORIG_SUM=$(sha256sum "${orig}" | awk '{print $1}' )
+        UPSTREAM_SUM=$(sha256sum "${upstream_orig}" | awk '{print $1}' )
+        if [ "${ORIG_SUM}" == "${UPSTREAM_SUM}" ]; then
+            error ${MSG_BORDER_LINE}
+            error "No difference between upstream orig.tar.gz and local."
+            error "No changes made to ${orig}"
+            error ${MSG_BORDER_LINE}
+            _RET="${odir}/${orig##*/}"
+            return 0
+        fi
+        error ${MSG_BORDER_LINE}
+        error " orig tarball existed at $orig and differs from upstream"
+        error " sha256sums of local and upstream:"
+        error "   (local) ${ORIG_SUM}"
+        error "   (upstream) ${UPSTREAM_SUM}"
+        error " Use --overwrite to use upstream automatically in the future"
+        error ${MSG_BORDER_LINE}
+        if [ "${overwrite}" = "false" ]; then
+            echo "Do you want to overwrite ${orig} with upstream? (y/n)"
+            read RESP
+            if [ "${RESP}" = "y" ]; then
+                orig=${upstream_orig}
+            fi
+        fi
+    else
+        # No preexisting orig.tar.gz, so copy it to output dir
+        orig=${upstream_orig}
+    fi
 
     cd "$sdir"
     mv "$orig" "$odir/"
