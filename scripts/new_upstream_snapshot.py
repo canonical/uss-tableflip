@@ -14,6 +14,7 @@ The commitish defaults to 'main'
 """
 
 import argparse
+import re
 import subprocess
 import sys
 from functools import partial
@@ -171,7 +172,7 @@ def drop_cpicks(commitish):
         sh(f"git add debian/patches && git commit -m '{commit_msg}'")
 
 
-def refresh_patches(commitish):
+def refresh_patches(commitish) -> bool:
     """Refresh any non-cpick quilt patches.
 
     For every quilt patch run:
@@ -183,7 +184,9 @@ def refresh_patches(commitish):
 
     If automatic refresh fails, the script will exit with failure. It
     is up to the user to manually fix the quilt patches and then rerun
-    the script with the '--post-patch' argument.
+    the script with the '--post quilt' argument.
+
+    :return: True when patches were refreshed
     """
     print("Attempting to automatically refresh quilt patches")
     try:
@@ -196,7 +199,7 @@ def refresh_patches(commitish):
             f"Failed applying patch '{failed_patch}'. Patch must be refreshed "
             "manually. When you can successfully "
             "'quilt push -a && quilt pop -a' rerun this script with "
-            "'--post-patch' argument."
+            "'--post quilt' argument."
         ) from e
     rc = sh(f"{QUILT_COMMAND} pop -a", check=False).returncode
     if rc not in [0, 2]:  # 2 means there were no quilt patches to pop
@@ -212,8 +215,10 @@ def refresh_patches(commitish):
             f"patches: \n" + "\n".join(patches)
         )
         sh(f"git commit -m '{commit_msg}' {' '.join(patches)}")
+        return True
     else:
         print("No patches needed refresh")
+        return False
 
 
 def is_commitish_upstream_tag(commitish):
@@ -339,7 +344,9 @@ def update_changelog(
     """
     print("Updating changelog")
     old_version = changelog_details.version
-    previously_unreleased = changelog_details.distro == "UNRELEASED"
+    previously_unreleased = (
+        changelog_details.distro.upper() == "UNRELEASED"
+    )
     commitish_is_upstream_tag = is_commitish_upstream_tag(commitish)
     old_series_suffix = get_series_suffix(old_version)
 
@@ -432,10 +439,31 @@ def get_series_suffix(old_version):
     return old_series_suffix
 
 
-def show_release_steps(changelog_details, devel_distro, is_devel):
+def show_release_steps(
+    changelog_details, devel_distro, is_devel, patches_refreshed
+):
     """Because we all like automation telling us to do more things."""
     series = devel_distro if is_devel else changelog_details.distro
     new_version = ChangelogDetails.get().version
+    git_branch_name = capture(
+        f"git rev-parse --abbrev-ref HEAD"
+    ).stdout.strip()
+    m = re.match(
+        r"^(?P<package_major_minor>\d+\.\d+).*", changelog_details.version
+    )
+    if patches_refreshed:
+        print(
+            "\n------------------------------------------------------\n"
+            "Quilt patches were updated in this snapshot. If leaving\n"
+            "UNRELEASED, note that build-package will not work until\n"
+            f"we either:\n1. increment {m['package_major_minor']}.x in "
+            "debian/changelog as part of an SRU.\n"
+            "-- OR --\n"
+            "2. Create a local development orig tarball with:\n"
+            " ./tools/make-tarball --output"
+            f" ../dl/cloud-init_{m['package_major_minor']}.orig.tar.gz\n"
+            "------------------------------------------------------\n"
+        )
     print("To release:")
     print(f"dch -r -D {series} ''")
     print(
@@ -444,7 +472,10 @@ def show_release_steps(changelog_details, devel_distro, is_devel):
     )
     print(f"git tag {new_version}")
     print("")
-    print("Don't forget to include any previously released changelogs!")
+    print(
+        "Don't forget to include previously released changelogs from "
+        f"upstream/{git_branch_name}-{m['package_major_minor']}.x!"
+    )
 
 
 def get_possible_devel_options(
@@ -538,14 +569,19 @@ def new_upstream_snapshot(
         )
 
     old_changelog_details = ChangelogDetails.get()
-    skip_past_merge = post_stage in {"merge", "patch"}
-    skip_past_patch = post_stage == "merge"
+    skip_past_merge = post_stage in {"merge", "quilt"}
+    skip_past_quilt = post_stage == "quilt"
+    patches_refreshed = False
 
     if not skip_past_merge:
         merge_commitish(commitish)
-    if not skip_past_patch:
+    if not skip_past_quilt:
         drop_cpicks(commitish)
-        refresh_patches(commitish)
+        patches_refreshed = refresh_patches(commitish)
+    else:
+        # Assume patches refreshed because manual short-circuit due
+        # to previous quilt patch apply failure
+        patches_refreshed = True
 
     # If arguments haven't been passed, we have a few things to determine
     (
@@ -568,7 +604,9 @@ def new_upstream_snapshot(
         first_devel_upload,
         first_sru,
     )
-    show_release_steps(old_changelog_details, devel_distro, is_devel)
+    show_release_steps(
+        old_changelog_details, devel_distro, is_devel, patches_refreshed
+    )
 
 
 def parse_args() -> argparse.Namespace:
