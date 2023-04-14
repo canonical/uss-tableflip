@@ -3,6 +3,7 @@
 
 VERBOSITY=0
 ASSUME_YES=false
+OFFLINE=false
 TEMP_D=""
 START_D="$PWD"
 FORMATS=".tar.gz .tar.xz .tar.bz2"
@@ -24,6 +25,7 @@ Usage: ${0##*/} [ options ] <<ARGUMENTS>>
 
    options:
       --ref R         what to build from [default to current branch].
+      --offline       perform no upstream orig.tar.gz downloads
     -o | --output D   put output in D. [default ../out]
 EOF
 }
@@ -31,14 +33,15 @@ EOF
 bad_Usage() { Usage 1>&2; [ $# -eq 0 ] || error "$@"; return 1; }
 
 prompt_yes_no() {
-    echo -n "$@" "? (y/n) "
-    if [ "${ASSUME_YES}" = "true" ]; then
-        echo "--yes"
+    [ "${ASSUME_YES}" = "true" ] && {
+        error "assuming yes to prompt:" "$@"
         return 0
-    fi
-    read RESP
-    if [ "${RESP}" = "y" ]; then
-        return 0
+    }
+    local resp
+    echo -n "$@" "? (y/n)  "
+    read resp || fail "failed to read user input"
+    if [ "$resp" = "y" ]; then
+       return 0
     fi
     return 1
 }
@@ -82,7 +85,7 @@ get_genchanges_version() {
     devel=$(distro-info --devel)
     [ "$suite" = "$devel" ] &&
         { debug 1 "-v not relevant for devel suite ($suite)"; return 0; }
-    [ "$(echo $suite | tr '[a-z]' '[A-Z]')" = "UNRELEASED" ] &&
+    [ "${suite^^}" = "UNRELEASED" ] &&
         { debug 1 "-v not relevant for unreleased"; return 0; }
     if ! command -v rmadison >/dev/null 2>&1; then
         debug 1 "rmadison not available."
@@ -118,6 +121,10 @@ get_genchanges_version() {
 get_orig_tarball() {
     local changelog_file="$1" dir="${2:-..}" offset="$3" verbose="$4"
     local tarball_fp
+    if [ "$OFFLINE" = "true" ]; then
+        error "Skipping download of orig.tar.gz due to --offline param"
+        return 0
+    fi
     if ! get-orig-tarball "${changelog_file}" "${dir}" ${offset:+--offset=${offset}} $verbose; then
         error "failed to get orig tarball for $pkg_name at $pkg_ver"
         return 1
@@ -133,13 +140,14 @@ get_orig_tarball() {
     error ${MSG_BORDER_LINE}
     error " Using orig tarball in $tarball_fp"
     sha256sum "${orig_tarball_fp}"
-    echo ${MSG_BORDER_LINE}
+    error ${MSG_BORDER_LINE}
     return 0
 }
 
+
 main() {
     local short_opts="ho:vy"
-    local long_opts="help,output:,offset:,ref:,yes,verbose"
+    local long_opts="help,offline,output:,offset:,ref:,yes,verbose"
     local getopt_out=""
     getopt_out=$(getopt --name "${0##*/}" \
         --options "${short_opts}" --long "${long_opts}" -- "$@") &&
@@ -154,6 +162,7 @@ main() {
             -h|--help) Usage ; exit 0;;
                --offset) offset=$next; shift;;
             -o|--output) out_d=$next; shift;;
+            --offline) OFFLINE=true;;
             -v|--verbose) VERBOSITY=$((${VERBOSITY}+1));;
             -y|--yes) ASSUME_YES=true;;
                --ref) ref=$next; shift;;
@@ -185,6 +194,7 @@ main() {
         fail "failed to read Distribution from changelog"
 
     upstream_ver=${pkg_ver%-*}
+
     # turn 0.7.7-10-gbc2c326-0ubuntu1 into 'bc2c326'
     upstream_hash=${upstream_ver##*-g}
 
@@ -213,7 +223,7 @@ main() {
         mv "$wtd" "${TEMP_D}/$pkg_name-$pkg_ver"
         wtd="${TEMP_D}/$pkg_name-$pkg_ver"
     else
-        error "pkg_name=$pkg_name pkg_ver=$pkg_ver upstream_ver=$upstream_ver"
+        error "pkg_name=$pkg_name pkg_ver=$pkg_ver upstream_ver=$upstream_ver suite=$suite"
         local orig_tarball_fp="" orig_tarball_fp=""
         orig_tarball_fp=$(find_orig "${pkg_name}" "${upstream_ver}" .. ../dl)
         if [ -n "$orig_tarball_fp" ]; then
@@ -221,10 +231,10 @@ main() {
             if [ "${tarball_dir}" = "../dl" ]; then
                 # Download and compare this tarball with latest upstream
                 if ! get_orig_tarball debian/changelog ../dl "${offset}"; then
-                    if ! prompt_yes_no "No upstream tarball for ${upstream_ver}, should we" \
-                           "create a new orig.tar.gz from the local branch"; then
+                    prompt_yes_no "No upstream tarball for ${upstream_ver}, " \
+                        "should we create a new orig.tar.gz from the local " \
+                        "branch" ||
                         fail "No upstream tarball found for ${upstream_ver}"
-                    fi
                 fi
             fi
             if ! prompt_yes_no "Proceed with build-package"; then
@@ -254,9 +264,10 @@ main() {
                        fail "failed to make tarball"
                 fi
             else
-                error ${MSG_BORDER_LINE}
                 sleep 1
-                ./tools/make-tarball "--output=$orig_tarball_fp" "$upstream_hash" ||
+                error ${MSG_BORDER_LINE}
+                echo ./tools/make-tarball "--output=$orig_tarball_fp"
+                ./tools/make-tarball "--output=$orig_tarball_fp" ||
                     fail "failed to make tarball"
                 error ${MSG_BORDER_LINE}
             fi
