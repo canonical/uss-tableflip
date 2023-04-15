@@ -192,6 +192,11 @@ main() {
         fail "failed to read Source from changelog"
     suite=$(cd "$wtd" && dpkg-parsechangelog --show-field Distribution) ||
         fail "failed to read Distribution from changelog"
+    if [ "${suite^^}" = "UNRELEASED" ]; then
+        prompt_yes_no "Found ${suite} in debian/changelog." \
+            "Do you really want to build-package" ||
+                fail "Set debian/changelog '${suite}' to a public release name"
+    fi
 
     upstream_ver=${pkg_ver%-*}
 
@@ -239,9 +244,13 @@ main() {
             fi
             if ! prompt_yes_no "Proceed with build-package"; then
                 tar_dir=$(dirname "${orig_tarball_fp}")
-                error "Canceled build-package."
+                error "Cancelled build-package."
                 error "To replace orig.tar.gz with latest upstream:"
                 error "  get-orig-tarball debian/changelog ${tar_dir} -v"
+                if [ -x tools/make-tarball ]; then
+                    error "To create orig.tar.gz from local branch:"
+                    error "  ./tools/make-tarball ../dl/${pkg_name}_$upstream_ver.orig.tar.gz"
+                fi
                 exit 0
             fi
         elif [ -x tools/make-tarball ]; then
