@@ -212,6 +212,12 @@ branch needs the upstream changes to ensure the patch still applies.
 Follow the "Adding a quilt patch to debian/patches" instructions above to
 fix the issue, then run `new_upstream_snapshot.py --post-stage=quilt`.
 
+> **Note**: After refreshing the patches against the source code in
+  upstream/main, it is most likely that the patches won't be applicable to the
+  source code in the previous package during `build-package` time.
+  More context on:
+  [cloud-init #2117](https://github.com/canonical/cloud-init/pull/2117#issuecomment-1508151851)
+
 To verify this fixes things for the daily build.
 
     $ quilt push -a
