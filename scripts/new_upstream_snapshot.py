@@ -335,6 +335,7 @@ def update_changelog(
     is_devel,
     first_devel_upload,
     first_sru,
+    patches_refreshed,
 ):
     """Update the changelog with the new details.
 
@@ -378,11 +379,26 @@ def update_changelog(
         )
 
     dch_command = "dch --no-multimaint "
-    if changelog_version:
+    new_patch_version = ""
+    if patches_refreshed:
+        m = re.match(
+            r"^(?P<package_version>\d+\.\d+(\.\d+)?).*",
+            changelog_details.version
+        )
+        ver_parts = m["package_version"].split(".")
+        ver_parts[-1] = f"{int(ver_parts[-1]) + 1}"
+        new_patch_version = changelog_details.version.replace(
+            m["package_version"], ".".join(ver_parts)
+        )
+    if new_patch_version:
+        # If version is UNRELEASED, we only bump the version number when
+        # quilt patches are refreshed, indicating that quilt patches will
+        # no longer apply against previous release orig.tar.gz
+        dch_command += f"--newversion '{new_patch_version}' ' '"
+    elif changelog_version:
         # We've calculated our new version
         dch_command += f"--newversion '{changelog_version}' ' '"
     elif previously_unreleased:
-        # If version is UNRELEASED, we don't change the version number
         dch_command += "' '"
     else:
         # We have an ubuntu-specific change in devel, so for something like
@@ -439,31 +455,16 @@ def get_series_suffix(old_version):
     return old_series_suffix
 
 
-def show_release_steps(
-    changelog_details, devel_distro, is_devel, patches_refreshed
-):
+def show_release_steps(changelog_details, devel_distro, is_devel):
     """Because we all like automation telling us to do more things."""
     series = devel_distro if is_devel else changelog_details.distro
     new_version = ChangelogDetails.get().version
     git_branch_name = capture(
-        f"git rev-parse --abbrev-ref HEAD"
+        "git rev-parse --abbrev-ref HEAD"
     ).stdout.strip()
     m = re.match(
-        r"^(?P<package_major_minor>\d+\.\d+).*", changelog_details.version
+        r"^(?P<package_version>\d+\.\d+(\.\d+)?).*", changelog_details.version
     )
-    if patches_refreshed:
-        print(
-            "\n------------------------------------------------------\n"
-            "Quilt patches were updated in this snapshot. If leaving\n"
-            "UNRELEASED, note that build-package will not work until\n"
-            f"we either:\n1. increment {m['package_major_minor']}.x in "
-            "debian/changelog as part of an SRU.\n"
-            "-- OR --\n"
-            "2. Create a local development orig tarball with:\n"
-            " ./tools/make-tarball --output"
-            f" ../dl/cloud-init_{m['package_major_minor']}.orig.tar.gz\n"
-            "------------------------------------------------------\n"
-        )
     print("To release:")
     print(f"dch -r -D {series} ''")
     print(
@@ -474,7 +475,7 @@ def show_release_steps(
     print("")
     print(
         "Don't forget to include previously released changelogs from "
-        f"upstream/{git_branch_name}-{m['package_major_minor']}.x!"
+        f"upstream/{git_branch_name}-{m['package_version']}.x!"
     )
 
 
@@ -603,6 +604,7 @@ def new_upstream_snapshot(
         is_devel,
         first_devel_upload,
         first_sru,
+        patches_refreshed,
     )
     show_release_steps(
         old_changelog_details, devel_distro, is_devel, patches_refreshed
