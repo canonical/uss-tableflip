@@ -607,7 +607,7 @@ def new_upstream_snapshot(
         patches_refreshed,
     )
     show_release_steps(
-        old_changelog_details, devel_distro, is_devel, patches_refreshed
+        old_changelog_details, devel_distro, is_devel
     )
 
 
