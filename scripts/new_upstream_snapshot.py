@@ -385,7 +385,7 @@ def update_changelog(
 
     dch_command = "dch --no-multimaint "
     new_patch_version = ""
-    if patches_refreshed:
+    if patches_refreshed and not commitish_is_upstream_tag:
         m = re.match(
             r"^(?P<package_version>\d+\.\d+(\.\d+)?).*",
             changelog_details.version
@@ -463,6 +463,8 @@ def get_series_suffix(old_version):
 def show_release_steps(changelog_details, devel_distro, is_devel):
     """Because we all like automation telling us to do more things."""
     series = devel_distro if is_devel else changelog_details.distro
+    if series.upper() == "UNRELEASED":
+        series = get_changelog_distro()
     new_version = ChangelogDetails.get().version
     git_branch_name = capture(
         "git rev-parse --abbrev-ref HEAD"
