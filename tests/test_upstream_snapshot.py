@@ -18,6 +18,10 @@ from scripts.new_upstream_snapshot import (
     sh,
 )
 
+PACKAGED_VERSION = "1.4"
+PACKAGED_NEXT = "2.1"
+UPSTREAM_MAIN_VERSION = "2.3"
+
 
 def new_capture(devel_series, stable_number, *args, **kwargs):
     if args[0] == "distro-info --devel":
@@ -54,21 +58,23 @@ def main_setup(tmp_path):
     try:
         capture("git init -b main")
     except CalledProcessError as e:
-        if 'usage: ' in e.stderr:
-           # Jammy doesn't have a -b switch
-           sh("git init")
-           sh("git checkout -B main")
+        if "usage: " in e.stderr:
+            # Jammy doesn't have a -b switch
+            sh("git init")
+            sh("git checkout -B main")
 
     # Create main branch
     for i in range(5):
         sh(f"echo 'line{i}' >> file.txt")
         sh("git add file.txt")
         sh(f"git commit -m 'line{i}\n\nLP: #12345{i}'")
-        hash = capture("git rev-parse HEAD").stdout.strip()
-        commits.append(hash)
+        git_hash = capture("git rev-parse HEAD").stdout.strip()
+        commits.append(git_hash)
     sh(
-        f"git tag -a 1.0 {commits[0]} -m 'release 1.0' && "
-        f"git tag -a 2.0 {commits[3]} -m 'release 2.0'"
+        f"git tag -a {PACKAGED_VERSION} {commits[0]} -m "
+        f"'release {PACKAGED_VERSION}' && "
+        f"git tag -a {UPSTREAM_MAIN_VERSION} {commits[3]} -m "
+        "'release {UPSTREAM_MAIN_VERSION}'"
     )
 
     yield commits
@@ -82,7 +88,8 @@ def devel_setup(main_setup):
     sh(f"git checkout {main_commits[0]} -b ubuntu/devel")
     Path("debian").mkdir()
     Path("debian/changelog").write_text(
-        "cloud-init (1.0-0ubuntu1) UNRELEASED; urgency=medium\n\n"
+        f"cloud-init ({PACKAGED_VERSION}-0ubuntu1) UNRELEASED; "
+        "urgency=medium\n\n"
         "  * Initial release\n\n"
         " -- J Doe <j.doe@canonical.com>  Fri, 12 Sep 2008 15:30:32 +0200\n"
     )
@@ -93,7 +100,7 @@ def devel_setup(main_setup):
     sh("git add .pc && git commit --amend --no-edit")
     sh(
         "sed -i -e '1s/UNRELEASED/bseries/' debian/changelog && "
-        "git commit -m 'releasing cloud-init 1.0-0ubuntu1' "
+        f"git commit -m 'releasing cloud-init {PACKAGED_VERSION}-0ubuntu1' "
         "debian/changelog && "
         "git checkout main"
     )
@@ -107,7 +114,8 @@ def series_setup(main_setup):
     sh(f"git checkout {main_commits[0]} -b ubuntu/aseries")
     Path("debian").mkdir()
     Path("debian/changelog").write_text(
-        "cloud-init (1.0-0ubuntu0~10.04.1) UNRELEASED; urgency=medium\n\n"
+        f"cloud-init ({PACKAGED_VERSION}-0ubuntu0~10.04.1) UNRELEASED; "
+        "urgency=medium\n\n"
         "  * Initial release\n\n"
         " -- J Doe <j.doe@canonical.com>  Fri, 12 Sep 2008 15:30:32 +0200\n"
     )
@@ -118,7 +126,7 @@ def series_setup(main_setup):
     sh("git add .pc && git commit --amend --no-edit")
     sh(
         "sed -i -e '1s/UNRELEASED/aseries/' debian/changelog && "
-        "git commit -m 'releasing cloud-init 1.0-0ubuntu0~10.04.1' "
+        f"git commit -m 'releasing cloud-init {PACKAGED_VERSION}-0ubuntu0~10.04.1' "  # noqa: E501
         "debian/changelog && "
         "git checkout main"
     )
@@ -133,7 +141,9 @@ def test_devel_new_upstream_snapshot_main(devel_setup, capsys):
         sh(f"git merge-base --is-ancestor {commit} {head}")
     details = ChangelogDetails.get()
     print(Path("debian/changelog").read_text())
-    assert details.version == "1.0-0ubuntu2"
+    assert (
+        f"{PACKAGED_NEXT}~1g{devel_setup[-1][:8]}-0ubuntu1" == details.version
+    )
     assert details.distro == "UNRELEASED"
     assert (
         f"Upstream snapshot based on main at {devel_setup[-1][:8]}."
@@ -156,17 +166,20 @@ def test_devel_new_upstream_snapshot_main(devel_setup, capsys):
 
 def test_devel_new_upstream_snapshot_tag(devel_setup, capsys):
     sh("git checkout ubuntu/devel")
-    new_upstream_snapshot("2.0", no_sru_bug=True)
+    new_upstream_snapshot(UPSTREAM_MAIN_VERSION, no_sru_bug=True)
     head = capture("git rev-parse HEAD").stdout
     for commit in devel_setup[:4]:
         sh(f"git merge-base --is-ancestor {commit} {head}")
     with pytest.raises(CalledProcessError):
         sh(f"git merge-base --is-ancestor {devel_setup[4]} {head}")
     details = ChangelogDetails.get()
-    assert details.version == "2.0-0ubuntu1"
+    assert details.version == f"{UPSTREAM_MAIN_VERSION}-0ubuntu1"
     assert details.distro == "UNRELEASED"
     # The \n here is also ensuring we have no LP on this line
-    assert "Upstream snapshot based on 2.0.\n" in details.changes
+    assert (
+        f"Upstream snapshot based on {UPSTREAM_MAIN_VERSION}.\n"
+        in details.changes
+    )
     assert "List of changes from upstream can be found at" in details.changes
     assert "Bugs fixed in this snapshot" in details.changes
 
@@ -184,7 +197,9 @@ def test_devel_new_upstream_snapshot_commit(devel_setup, capsys):
         with pytest.raises(CalledProcessError):
             sh(f"git merge-base --is-ancestor {commit} {head}")
     details = ChangelogDetails.get()
-    assert details.version == "1.0-0ubuntu2"
+    assert (
+        f"{PACKAGED_NEXT}~1g{devel_setup[2][:8]}-0ubuntu1" == details.version
+    )
     assert details.distro == "UNRELEASED"
     assert (
         f"Upstream snapshot based on {devel_setup[2][:8]}" in details.changes
@@ -205,7 +220,7 @@ def test_series_new_upstream_snapshot_main(series_setup, capsys):
     for commit in series_setup:
         sh(f"git merge-base --is-ancestor {commit} {head}")
     details = ChangelogDetails.get()
-    assert details.version == "1.0-0ubuntu0~10.04.2"
+    assert details.version == f"{PACKAGED_VERSION}-0ubuntu0~10.04.2"
     assert details.distro == "UNRELEASED"
     assert (
         f"Upstream snapshot based on main at {series_setup[-1][:8]}. "
@@ -224,16 +239,19 @@ def test_series_new_upstream_snapshot_main(series_setup, capsys):
 
 def test_series_new_upstream_snapshot_tag(series_setup, capsys):
     sh("git checkout ubuntu/aseries")
-    new_upstream_snapshot("2.0", no_sru_bug=True)
+    new_upstream_snapshot(UPSTREAM_MAIN_VERSION, no_sru_bug=True)
     head = capture("git rev-parse HEAD").stdout
     for commit in series_setup[:4]:
         sh(f"git merge-base --is-ancestor {commit} {head}")
     with pytest.raises(CalledProcessError):
         sh(f"git merge-base --is-ancestor {series_setup[4]} {head}")
     details = ChangelogDetails.get()
-    assert details.version == "2.0-0ubuntu0~10.04.1"
+    assert details.version == f"{UPSTREAM_MAIN_VERSION}-0ubuntu0~10.04.1"
     assert details.distro == "UNRELEASED"
-    assert "Upstream snapshot based on 2.0" in details.changes
+    assert (
+        f"Upstream snapshot based on {UPSTREAM_MAIN_VERSION}"
+        in details.changes
+    )
     assert "List of changes from upstream can be found at" in details.changes
     assert "Bugs fixed in this snapshot" not in details.changes
     assert "LP" not in details.changes
@@ -252,7 +270,7 @@ def test_series_new_upstream_snapshot_commit(series_setup, capsys):
         with pytest.raises(CalledProcessError):
             sh(f"git merge-base --is-ancestor {commit} {head}")
     details = ChangelogDetails.get()
-    assert details.version == "1.0-0ubuntu0~10.04.2"
+    assert details.version == f"{PACKAGED_VERSION}-0ubuntu0~10.04.2"
     assert details.distro == "UNRELEASED"
     assert (
         f"Upstream snapshot based on {series_setup[2][:8]}" in details.changes
@@ -271,7 +289,9 @@ def test_devel_changelog_from_unreleased(devel_setup):
     new_upstream_snapshot("main~", no_sru_bug=True)
     new_upstream_snapshot("main", no_sru_bug=True)
     details = ChangelogDetails.get()
-    assert details.version == "1.0-0ubuntu2"
+    assert (
+        details.version == f"{PACKAGED_NEXT}~2g{devel_setup[-1][:8]}-0ubuntu1"
+    )
     assert details.distro == "UNRELEASED"
     assert (
         f"Upstream snapshot based on main at {devel_setup[-1][:8]}"
@@ -291,7 +311,7 @@ def test_series_changelog_from_unreleased(series_setup):
     new_upstream_snapshot("main~", no_sru_bug=True)
     new_upstream_snapshot("main", no_sru_bug=True)
     details = ChangelogDetails.get()
-    assert details.version == "1.0-0ubuntu0~10.04.2"
+    assert details.version == f"{PACKAGED_VERSION}-0ubuntu0~10.04.2"
     assert details.distro == "UNRELEASED"
     assert (
         f"Upstream snapshot based on main at {series_setup[-1][:8]}"
@@ -330,10 +350,10 @@ def test_devel_lp_splitting(devel_setup):
 def test_first_devel_upload(devel_setup, mock_new_sru, capsys):
     sh("git checkout ubuntu/devel")
     new_upstream_snapshot(
-        "2.0", known_first_devel_upload=True, no_sru_bug=True
+        UPSTREAM_MAIN_VERSION, known_first_devel_upload=True, no_sru_bug=True
     )
     details = ChangelogDetails.get()
-    assert details.version == "2.0-0ubuntu1"
+    assert details.version == f"{UPSTREAM_MAIN_VERSION}-0ubuntu1"
     assert details.distro == "UNRELEASED"
     assert "Bugs fixed in this snapshot" in details.changes
     assert "List of changes from upstream" in details.changes
@@ -344,9 +364,11 @@ def test_first_devel_upload(devel_setup, mock_new_sru, capsys):
 
 def test_first_sru_to_series(devel_setup, mock_new_sru, capsys):
     sh("git checkout ubuntu/devel")
-    new_upstream_snapshot("2.0", no_sru_bug=True, known_first_sru=True)
+    new_upstream_snapshot(
+        UPSTREAM_MAIN_VERSION, no_sru_bug=True, known_first_sru=True
+    )
     details = ChangelogDetails.get()
-    assert details.version == "2.0-0ubuntu0~10.10.1"
+    assert details.version == f"{UPSTREAM_MAIN_VERSION}-0ubuntu0~10.10.1"
     assert details.distro == "UNRELEASED"
     assert "Bugs fixed in this snapshot" not in details.changes
     assert "List of changes from upstream" in details.changes
@@ -368,12 +390,12 @@ def test_refresh_patches(devel_setup):
         "git add debian/patches/new-patch && "
         "git commit -m 'add quilt patch'"
     )
-    new_upstream_snapshot("2.0", no_sru_bug=True)
+    new_upstream_snapshot(UPSTREAM_MAIN_VERSION, no_sru_bug=True)
     assert "patch-stuff" not in Path("file.txt").read_text()
     sh("quilt push -a")
     assert Path("file.txt").read_text().startswith("line0\npatch-stuff\nline1")
     assert (
-        "refresh patches against 2.0"
+        f"refresh patches against {UPSTREAM_MAIN_VERSION}"
         in capture("git log HEAD~ -1 --oneline").stdout
     )
 
@@ -392,28 +414,29 @@ def test_refresh_fail(devel_setup):
         "git commit -m 'add quilt patch'"
     )
     with pytest.raises(CliError, match="Failed applying patch 'new-patch'"):
-        new_upstream_snapshot("2.0", no_sru_bug=True)
+        new_upstream_snapshot(UPSTREAM_MAIN_VERSION, no_sru_bug=True)
 
 
 def test_release_instructions(devel_setup, capsys):
     sh("git checkout ubuntu/devel")
     new_upstream_snapshot("main", no_sru_bug=True)
     pre_changelog = ChangelogDetails.get()
-    expected_version = "1.0-0ubuntu2"
+    expected_version = f"{PACKAGED_NEXT}~1g{devel_setup[-1][:8]}-0ubuntu1"
+    tag_version = expected_version.replace("~", "_")
     assert pre_changelog.version == expected_version
     assert pre_changelog.distro == "UNRELEASED"
 
     stdout = capsys.readouterr().out
     assert "dch -r -D bseries ''" in stdout
     assert f"releasing cloud-init version {expected_version}" in stdout
-    assert f"git tag {expected_version}" in stdout
+    assert f"git tag ubuntu/{tag_version}" in stdout
 
     # The "yes" is because dch warns and prompts about the name 'bseries'
     sh(
         "yes | dch -r -D bseries '' && "
         f"git commit -m 'releasing cloud-init version {expected_version}' "
         "debian/changelog && "
-        f"git tag {expected_version}"
+        f"git tag {tag_version}"
     )
 
     post_changelog = ChangelogDetails.get()

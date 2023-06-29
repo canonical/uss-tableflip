@@ -149,10 +149,11 @@ def drop_cpicks(commitish):
     print("Dropping any cpicks that we've pulled in from main")
     dropped_cpicks = []
     for cpick in Path("debian/patches").glob("cpick*"):
-        hash = cpick.name.split("-")[1]
+        git_hash = cpick.name.split("-")[1]
         is_ancestor = (
             sh(
-                f"git merge-base --is-ancestor {hash} {commitish}", check=False
+                f"git merge-base --is-ancestor {git_hash} {commitish}",
+                check=False,
             ).returncode
             == 0
         )
@@ -333,14 +334,30 @@ def get_bugs_fixed_devel():
             yield line.split("LP: #")[1].strip()
 
 
+def increment_major_version(original: str) -> str:
+    """Given a version number, increment and return the major version.
+
+    Examples:
+    22.1 -> 22.2
+    22.2.3 -> 22.3
+    22.3.4~literally-anything -> 22.4
+    22.4 -> 23.1
+    """
+    split = original.split(".", 1)
+    major = int(split[0])
+    minor = int(split[1][0]) + 1
+    if minor == 5:
+        major += 1
+        minor = 1
+    return f"{major}.{minor}"
+
+
 def update_changelog(
     commitish,
     bug,
     changelog_details: ChangelogDetails,
     is_devel,
     first_devel_upload,
-    first_sru,
-    patches_refreshed,
 ):
     """Update the changelog with the new details.
 
@@ -350,9 +367,7 @@ def update_changelog(
     """
     print("Updating changelog")
     old_version = changelog_details.version
-    previously_unreleased = (
-        changelog_details.distro.upper() == "UNRELEASED"
-    )
+    previously_unreleased = changelog_details.distro.upper() == "UNRELEASED"
     commitish_is_upstream_tag = is_commitish_upstream_tag(commitish)
     old_series_suffix = get_series_suffix(old_version)
 
@@ -363,53 +378,59 @@ def update_changelog(
     # Determine new changelog version
     changelog_version = ""
     if commitish_is_upstream_tag:
-        if first_sru:
-            series_number = capture("distro-info --stable -r").stdout.strip()
-            changelog_version = f"{commitish}-0ubuntu0~{series_number}.1"
-        elif is_devel:
+        # Upstream tag always takes priority. For 22.1:
+        # 22.1-0ubuntu1 on devel
+        # 22.1-0ubuntu0~22.04.1 on jammy
+        if is_devel:
             if not previously_unreleased or first_devel_upload:
                 changelog_version = f"{commitish}-0ubuntu1"
-    if old_series_suffix:
+        else:
+            series_number = capture("distro-info --stable -r").stdout.strip()
+            changelog_version = f"{commitish}-0ubuntu0~{series_number}.1"
+    elif is_devel:
+        # If not an upstream tag, then bump current number. For devel this
+        # looks something like:
+        # 22.1~1g12ab34cd-0ubuntu1 -> 22.1~2g12ab34ce-0ubuntu1
+        #
+        # Note that even if the version stays unreleased, we're going to
+        # increment the ~<num> as it's intended to be less of a significant
+        # version number and more a way to ensure newer releases sort higher
+        git_hash = capture(
+            f"git rev-parse --short=8 {commitish}"
+        ).stdout.strip()
+        if "~" in old_version:
+            v = old_version
+            increment = int(v[v.find("~") + 1 : v.find("g")]) + 1
+            prefix = old_version.split("~")[0]
+        else:
+            upstream_version = old_version.split("-")[0]
+            prefix = increment_major_version(upstream_version)
+            increment = 1
+        changelog_version = f"{prefix}~{increment}g{git_hash}-0ubuntu1"
+    elif previously_unreleased:
+        # If we our previous snapshot went UNRELEASED, then there's no reason
+        # to bump the version number
+        changelog_version = old_version
+    elif old_series_suffix:
+        # If it's not an upstream tag or devel, we're just bumping the suffix
+        # E.g.,:
+        # 22.1-0ubuntu0~22.04.1 -> 22.1-0ubuntu0~22.04.2
         parts = old_series_suffix.split(".")
-        if commitish_is_upstream_tag:
-            parts[-1] = "1"
-        elif not previously_unreleased:
-            parts[-1] = str(int(parts[-1]) + 1)
-        # else version number stays the same
+        parts[-1] = str(int(parts[-1]) + 1)
         new_series_suffix = ".".join(parts)
         changelog_version = (
             f"{commitish}-0ubuntu0~{new_series_suffix}"
             if commitish_is_upstream_tag
             else f"{old_version.rsplit('~')[0]}~{new_series_suffix}"
         )
-
-    dch_command = "dch --no-multimaint "
-    new_patch_version = ""
-    if patches_refreshed and not commitish_is_upstream_tag:
-        m = re.match(
-            r"^(?P<package_version>\d+\.\d+(\.\d+)?).*",
-            changelog_details.version
-        )
-        ver_parts = m["package_version"].split(".")
-        ver_parts[-1] = f"{int(ver_parts[-1]) + 1}"
-        new_patch_version = changelog_details.version.replace(
-            m["package_version"], ".".join(ver_parts)
-        )
-    if new_patch_version:
-        # If version is UNRELEASED, we only bump the version number when
-        # quilt patches are refreshed, indicating that quilt patches will
-        # no longer apply against previous release orig.tar.gz
-        dch_command += f"--newversion '{new_patch_version}' ' '"
-    elif changelog_version:
-        # We've calculated our new version
-        dch_command += f"--newversion '{changelog_version}' ' '"
-    elif previously_unreleased:
-        dch_command += "' '"
     else:
-        # We have an ubuntu-specific change in devel, so for something like
-        # 22.4.1-0ubuntu1, bump 0ubuntu1 to 0ubuntu2
-        dch_command += "--increment ' '"
+        raise CliError(
+            "Shouldn't be here. There is an bug in "
+            "`new_upstream_snapshot.py`. Stopping as version number "
+            "is likely to be wrong. "
+        )
 
+    dch_command = f"dch --no-multimaint --newversion '{changelog_version}' ' '"
     # Add new changelog entry with blank changelog message
     sh(dch_command)
 
@@ -466,9 +487,7 @@ def show_release_steps(changelog_details, devel_distro, is_devel):
     if series.upper() == "UNRELEASED":
         series = get_changelog_distro()
     new_version = ChangelogDetails.get().version
-    git_branch_name = capture(
-        "git rev-parse --abbrev-ref HEAD"
-    ).stdout.strip()
+    git_branch_name = capture("git rev-parse --abbrev-ref HEAD").stdout.strip()
     m = re.match(
         r"^(?P<package_version>\d+\.\d+(\.\d+)?).*", changelog_details.version
     )
@@ -510,7 +529,7 @@ def get_possible_devel_options(
     if (
         not known_first_devel_upload
         and not known_first_sru
-        and "~" not in changelog_details.version
+        and not re.match(r".*~\d+\.\d+\.\d+", changelog_details.version)
     ):
         changelog_distro = get_changelog_distro()
         is_devel = True
@@ -583,17 +602,12 @@ def new_upstream_snapshot(
     old_changelog_details = ChangelogDetails.get()
     skip_past_merge = post_stage in {"merge", "quilt"}
     skip_past_quilt = post_stage == "quilt"
-    patches_refreshed = False
 
     if not skip_past_merge:
         merge_commitish(commitish)
     if not skip_past_quilt:
         drop_cpicks(commitish)
-        patches_refreshed = refresh_patches(commitish)
-    else:
-        # Assume patches refreshed because manual short-circuit due
-        # to previous quilt patch apply failure
-        patches_refreshed = True
+        refresh_patches(commitish)
 
     # If arguments haven't been passed, we have a few things to determine
     (
@@ -607,19 +621,15 @@ def new_upstream_snapshot(
         changelog_details=old_changelog_details,
     )
     bug = None if is_devel else get_sru_bug(bug, no_sru_bug)
-
     update_changelog(
         commitish,
         bug,
         old_changelog_details,
         is_devel,
         first_devel_upload,
-        first_sru,
-        patches_refreshed,
     )
-    show_release_steps(
-        old_changelog_details, devel_distro, is_devel
-    )
+
+    show_release_steps(old_changelog_details, devel_distro, is_devel)
 
 
 def parse_args() -> argparse.Namespace:
