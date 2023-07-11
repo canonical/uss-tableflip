@@ -202,6 +202,8 @@ main() {
 
     # turn 0.7.7-10-gbc2c326-0ubuntu1 into 'bc2c326'
     upstream_hash=${upstream_ver##*-g}
+    # turn 23.3~3gbc2c326-0ubuntu1 into 'bc2c326'
+    upstream_hash=${upstream_ver##*~[0-9]g}
 
     local native=false
     local dsf="debian/source/format"
