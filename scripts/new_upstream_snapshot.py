@@ -369,7 +369,7 @@ def update_changelog(
     old_version = changelog_details.version
     previously_unreleased = changelog_details.distro.upper() == "UNRELEASED"
     commitish_is_upstream_tag = is_commitish_upstream_tag(commitish)
-    old_series_suffix = get_series_suffix(old_version)
+    next_series_suffix = get_next_series_suffix(old_version)
 
     msg = get_changelog_message(
         commitish, bug, commitish_is_upstream_tag, is_devel
@@ -384,7 +384,11 @@ def update_changelog(
         if is_devel:
             if not previously_unreleased or first_devel_upload:
                 changelog_version = f"{commitish}-0ubuntu1"
+        elif next_series_suffix:
+            changelog_version = f"{commitish}-0ubuntu0~{next_series_suffix}"
         else:
+            # If it's not devel and it doesn't have a series suffix, then
+            # this is the first SRU to a series
             series_number = capture("distro-info --stable -r").stdout.strip()
             changelog_version = f"{commitish}-0ubuntu0~{series_number}.1"
     elif is_devel:
@@ -411,17 +415,12 @@ def update_changelog(
         # If we our previous snapshot went UNRELEASED, then there's no reason
         # to bump the version number
         changelog_version = old_version
-    elif old_series_suffix:
+    elif next_series_suffix:
         # If it's not an upstream tag or devel, we're just bumping the suffix
         # E.g.,:
         # 22.1-0ubuntu0~22.04.1 -> 22.1-0ubuntu0~22.04.2
-        parts = old_series_suffix.split(".")
-        parts[-1] = str(int(parts[-1]) + 1)
-        new_series_suffix = ".".join(parts)
         changelog_version = (
-            f"{commitish}-0ubuntu0~{new_series_suffix}"
-            if commitish_is_upstream_tag
-            else f"{old_version.rsplit('~')[0]}~{new_series_suffix}"
+            f"{old_version.rsplit('~')[0]}~{next_series_suffix}"
         )
     else:
         raise CliError(
@@ -460,25 +459,30 @@ def add_msg_to_changelog(msg):
             f.write(f"{line}\n")
 
 
-def get_series_suffix(old_version):
-    """Get the suffix (if it exists) from the release version
+def get_next_series_suffix(old_version):
+    """Get the suffix (if it exists) for the next release version
 
     Any SRUed release should end with <series-number>.x. E.g.
     1.0-0ubuntu0~10.04.1
-    The series suffix above would be "10.04.1".
+    The series suffix returned would be "10.04.2".
 
     Devel releases will return None.
     """
     if "~" not in old_version:
-        old_series_suffix = None  # I.e., it's a devel upload
+        return None  # I.e., it's a devel upload
     elif old_version.count("~") == 1:
         old_series_suffix = old_version.split("~")[1]
+        if "." not in old_series_suffix:
+            # Devel has ~ but no series suffix.
+            # E.g., 23.2.1~1g111f1a6e-0ubuntu1
+            return None
+        parts = old_series_suffix.split(".")
+        parts[-1] = str(int(parts[-1]) + 1)
+        return ".".join(parts)
     else:
         raise CliError(
             "Don't know what to do with multiple '~' in version number"
         )
-
-    return old_series_suffix
 
 
 def show_release_steps(changelog_details, devel_distro, is_devel):
