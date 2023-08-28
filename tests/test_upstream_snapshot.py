@@ -246,7 +246,7 @@ def test_series_new_upstream_snapshot_tag(series_setup, capsys):
     with pytest.raises(CalledProcessError):
         sh(f"git merge-base --is-ancestor {series_setup[4]} {head}")
     details = ChangelogDetails.get()
-    assert details.version == f"{UPSTREAM_MAIN_VERSION}-0ubuntu0~10.04.2"
+    assert details.version == f"{UPSTREAM_MAIN_VERSION}-0ubuntu0~10.04.1"
     assert details.distro == "UNRELEASED"
     assert (
         f"Upstream snapshot based on {UPSTREAM_MAIN_VERSION}"

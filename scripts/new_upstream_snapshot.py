@@ -385,7 +385,11 @@ def update_changelog(
             if not previously_unreleased or first_devel_upload:
                 changelog_version = f"{commitish}-0ubuntu1"
         elif next_series_suffix:
-            changelog_version = f"{commitish}-0ubuntu0~{next_series_suffix}"
+            # Keep the series suffix, but reset the last incrementing number
+            suffix_parts = next_series_suffix.split(".")
+            suffix_parts[-1] = "1"
+            new_suffix = ".".join(suffix_parts)
+            changelog_version = f"{commitish}-0ubuntu0~{new_suffix}"
         else:
             # If it's not devel and it doesn't have a series suffix, then
             # this is the first SRU to a series
