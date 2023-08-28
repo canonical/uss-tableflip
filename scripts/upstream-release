@@ -62,7 +62,7 @@ if [ "$RESP" = "y" ]; then
   git pull
   git checkout -b upstream/$RELEASE_MAJOR_MINOR
   printf "%s\n%s\n\n%s\n" "$RELEASE_MAJOR_MINOR" "$CHANGELOG" "$(cat ChangeLog)" > ChangeLog
-  sed -i "s/$PREVIOUS_MAJOR_MINOR/$RELEASE_MAJOR_MINOR/" cloudinit/version.py
+  sed -i "s/${PREVIOUS_MAJOR_MINOR}[.0-9]*/$RELEASE_MAJOR_MINOR/" cloudinit/version.py
   git diff
   cat > commit.msg <<EOF
 Release $RELEASE_MAJOR_MINOR
