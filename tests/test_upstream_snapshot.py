@@ -13,6 +13,7 @@ import pytest
 from scripts.new_upstream_snapshot import (
     ChangelogDetails,
     CliError,
+    VersionInfo,
     capture,
     new_upstream_snapshot,
     sh,
@@ -141,8 +142,8 @@ def test_devel_new_upstream_snapshot_main(devel_setup, capsys):
         sh(f"git merge-base --is-ancestor {commit} {head}")
     details = ChangelogDetails.get()
     print(Path("debian/changelog").read_text())
-    assert (
-        f"{PACKAGED_NEXT}~1g{devel_setup[-1][:8]}-0ubuntu1" == details.version
+    assert f"{PACKAGED_NEXT}~1g{devel_setup[-1][:8]}-0ubuntu1" == str(
+        details.version
     )
     assert details.distro == "UNRELEASED"
     assert (
@@ -173,7 +174,7 @@ def test_devel_new_upstream_snapshot_tag(devel_setup, capsys):
     with pytest.raises(CalledProcessError):
         sh(f"git merge-base --is-ancestor {devel_setup[4]} {head}")
     details = ChangelogDetails.get()
-    assert details.version == f"{UPSTREAM_MAIN_VERSION}-0ubuntu1"
+    assert str(details.version) == f"{UPSTREAM_MAIN_VERSION}-0ubuntu1"
     assert details.distro == "UNRELEASED"
     # The \n here is also ensuring we have no LP on this line
     assert (
@@ -197,8 +198,8 @@ def test_devel_new_upstream_snapshot_commit(devel_setup, capsys):
         with pytest.raises(CalledProcessError):
             sh(f"git merge-base --is-ancestor {commit} {head}")
     details = ChangelogDetails.get()
-    assert (
-        f"{PACKAGED_NEXT}~1g{devel_setup[2][:8]}-0ubuntu1" == details.version
+    assert f"{PACKAGED_NEXT}~1g{devel_setup[2][:8]}-0ubuntu1" == str(
+        details.version
     )
     assert details.distro == "UNRELEASED"
     assert (
@@ -220,7 +221,7 @@ def test_series_new_upstream_snapshot_main(series_setup, capsys):
     for commit in series_setup:
         sh(f"git merge-base --is-ancestor {commit} {head}")
     details = ChangelogDetails.get()
-    assert details.version == f"{PACKAGED_VERSION}-0ubuntu0~10.04.2"
+    assert str(details.version) == f"{PACKAGED_VERSION}-0ubuntu0~10.04.2"
     assert details.distro == "UNRELEASED"
     assert (
         f"Upstream snapshot based on main at {series_setup[-1][:8]}. "
@@ -246,7 +247,7 @@ def test_series_new_upstream_snapshot_tag(series_setup, capsys):
     with pytest.raises(CalledProcessError):
         sh(f"git merge-base --is-ancestor {series_setup[4]} {head}")
     details = ChangelogDetails.get()
-    assert details.version == f"{UPSTREAM_MAIN_VERSION}-0ubuntu0~10.04.1"
+    assert str(details.version) == f"{UPSTREAM_MAIN_VERSION}-0ubuntu0~10.04.1"
     assert details.distro == "UNRELEASED"
     assert (
         f"Upstream snapshot based on {UPSTREAM_MAIN_VERSION}"
@@ -270,7 +271,7 @@ def test_series_new_upstream_snapshot_commit(series_setup, capsys):
         with pytest.raises(CalledProcessError):
             sh(f"git merge-base --is-ancestor {commit} {head}")
     details = ChangelogDetails.get()
-    assert details.version == f"{PACKAGED_VERSION}-0ubuntu0~10.04.2"
+    assert str(details.version) == f"{PACKAGED_VERSION}-0ubuntu0~10.04.2"
     assert details.distro == "UNRELEASED"
     assert (
         f"Upstream snapshot based on {series_setup[2][:8]}" in details.changes
@@ -290,7 +291,8 @@ def test_devel_changelog_from_unreleased(devel_setup):
     new_upstream_snapshot("main", no_sru_bug=True)
     details = ChangelogDetails.get()
     assert (
-        details.version == f"{PACKAGED_NEXT}~2g{devel_setup[-1][:8]}-0ubuntu1"
+        str(details.version)
+        == f"{PACKAGED_NEXT}~2g{devel_setup[-1][:8]}-0ubuntu1"
     )
     assert details.distro == "UNRELEASED"
     assert (
@@ -311,7 +313,7 @@ def test_series_changelog_from_unreleased(series_setup):
     new_upstream_snapshot("main~", no_sru_bug=True)
     new_upstream_snapshot("main", no_sru_bug=True)
     details = ChangelogDetails.get()
-    assert details.version == f"{PACKAGED_VERSION}-0ubuntu0~10.04.2"
+    assert str(details.version) == f"{PACKAGED_VERSION}-0ubuntu0~10.04.2"
     assert details.distro == "UNRELEASED"
     assert (
         f"Upstream snapshot based on main at {series_setup[-1][:8]}"
@@ -353,7 +355,7 @@ def test_first_devel_upload(devel_setup, mock_new_sru, capsys):
         UPSTREAM_MAIN_VERSION, known_first_devel_upload=True, no_sru_bug=True
     )
     details = ChangelogDetails.get()
-    assert details.version == f"{UPSTREAM_MAIN_VERSION}-0ubuntu1"
+    assert str(details.version) == f"{UPSTREAM_MAIN_VERSION}-0ubuntu1"
     assert details.distro == "UNRELEASED"
     assert "Bugs fixed in this snapshot" in details.changes
     assert "List of changes from upstream" in details.changes
@@ -368,7 +370,7 @@ def test_first_sru_to_series(devel_setup, mock_new_sru, capsys):
         UPSTREAM_MAIN_VERSION, no_sru_bug=True, known_first_sru=True
     )
     details = ChangelogDetails.get()
-    assert details.version == f"{UPSTREAM_MAIN_VERSION}-0ubuntu0~10.10.1"
+    assert str(details.version) == f"{UPSTREAM_MAIN_VERSION}-0ubuntu0~10.10.1"
     assert details.distro == "UNRELEASED"
     assert "Bugs fixed in this snapshot" not in details.changes
     assert "List of changes from upstream" in details.changes
@@ -416,6 +418,43 @@ def test_refresh_fail(devel_setup):
     with pytest.raises(CliError, match="Failed applying patch 'new-patch'"):
         new_upstream_snapshot(UPSTREAM_MAIN_VERSION, no_sru_bug=True)
 
+@pytest.mark.parametrize(
+    "src_version,major,minor,hotfix,pre_revision,pre_commit,debian,ubuntu",
+    (
+        ("23.3.3-0ubuntu4~23.04.1",23, 3, None, None, None, 0, 4),
+        ("23.1-0ubuntu2", 23, 1, None, None, None, 0, 2),
+        ("23.4~3g0cb0b80f-0ubuntu1", 23, 4, None, 3, "0cb0b80f", 0, 1),
+    )
+)
+def test_version_info_from_string(
+    src_version,
+    major,
+    minor,
+    hotfix,
+    pre_revision,
+    pre_commit,
+    debian,
+    ubuntu,
+):
+    """Assert VersionInfo from string parses correct attributes"""
+    ver = VersionInfo.from_string(src_version)
+    assert major == ver.major
+    assert minor == ver.minor
+    if hotfix:
+        assert hotfix == ver.hotfix
+    else:
+        assert hotfix is None
+    if pre_revision:
+        assert pre_revision == ver.pre_revision
+    else:
+        assert pre_revision is None
+    if pre_commit:
+        assert pre_commit == ver.pre_commit
+    else:
+        assert pre_commit is None
+    assert debian == ver.debian
+    assert ubuntu == ver.ubuntu
+
 
 def test_release_instructions(devel_setup, capsys):
     sh("git checkout ubuntu/devel")
@@ -423,7 +462,7 @@ def test_release_instructions(devel_setup, capsys):
     pre_changelog = ChangelogDetails.get()
     expected_version = f"{PACKAGED_NEXT}~1g{devel_setup[-1][:8]}-0ubuntu1"
     tag_version = expected_version.replace("~", "_")
-    assert pre_changelog.version == expected_version
+    assert str(pre_changelog.version) == expected_version
     assert pre_changelog.distro == "UNRELEASED"
 
     stdout = capsys.readouterr().out
@@ -440,7 +479,7 @@ def test_release_instructions(devel_setup, capsys):
     )
 
     post_changelog = ChangelogDetails.get()
-    assert post_changelog.version == expected_version
+    assert str(post_changelog.version) == expected_version
     assert post_changelog.distro == "bseries"
     assert int(post_changelog.timestamp) >= int(pre_changelog.timestamp)
     # Because series went from UNRELEASED->bseries, we know the first line
