@@ -489,8 +489,12 @@ def get_new_version(
             # this is the first SRU to a series
             series_number = capture("distro-info --stable -r").stdout.strip()
             changelog_version = VersionInfo.from_string(
-                f"{commitish}-0ubuntu0~{series_number}.1"
+                f"{commitish}-0ubuntu1~{series_number}.1"
             )
+        if tag_info.hotfix:
+            # This is unfortunately only a heuristic. If devel is in
+            # feature freeze, this is likely to be wrong.
+            changelog_version = changelog_version.replace(ubuntu=0)
     elif is_devel:
         # If not an upstream tag, then bump current number. For devel this
         # looks something like:
