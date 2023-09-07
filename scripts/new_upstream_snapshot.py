@@ -41,10 +41,134 @@ class CliError(Exception):
     pass
 
 
+class VersionInfo:
+    def __init__(
+        self,
+        major: int,
+        minor: int,
+        hotfix: Optional[int] = None,
+        *,
+        debian: Optional[int] = None,
+        ubuntu: Optional[int] = None,
+        series: Optional[str] = None,
+        series_revision: Optional[int] = None,
+        pre_revision: Optional[int] = None,
+        pre_commit: Optional[str] = None,
+    ):
+        if any((series, series_revision)) and any((pre_revision, pre_commit)):
+            raise RuntimeError("Cannot contain both series and pre_version")
+        self.major = major
+        self.minor = minor
+        self.hotfix = hotfix
+        self.debian = debian
+        self.ubuntu = ubuntu
+        self.series = series
+        self.series_revision = series_revision
+        self.pre_revision = pre_revision
+        self.pre_commit = pre_commit
+
+    @classmethod
+    def from_string(cls, version):
+        # Something like 23.1.1-0ubuntu1~22.04.1
+        # or 23.1~1g111f1a6e-0ubuntu1
+        pattern = (
+            r"(?P<major>\d+)"
+            r"\."
+            r"(?P<minor>\d+)"
+            r"((\.(?P<hotfix>\d+))|(~(?P<pre_revision>\d+)g(?P<pre_commit>\S{8})))?"  # noqa: E501
+            r"(-(?P<debian>\d+))"
+            r"(ubuntu(?P<ubuntu>\d+))"
+            r"(~(?P<series>\d+.\d+))?"
+            r"(\.(?P<series_revision>\d+))?"
+        )
+        match = re.search(
+            pattern,
+            version,
+        )
+        if not match:
+            if "-" not in version and "~" not in version:
+                # It's just an upstream tag
+                return cls(*version.split("."))
+            raise RuntimeError(f"Cannot parse version string {version}")
+        matches: dict = match.groupdict()
+        for some_int in [
+            "major",
+            "minor",
+            "hotfix",
+            "debian",
+            "ubuntu",
+            "series_revision",
+            "pre_revision",
+        ]:
+            if matches[some_int]:
+                matches[some_int] = int(matches[some_int])
+        return cls(**matches)
+
+    def __str__(self):
+        parts = [
+            f"{self.major}.{self.minor}",
+            f".{self.hotfix}" if self.hotfix else "",
+            f"~{self.pre_revision}g{self.pre_commit}"
+            if self.pre_revision
+            else "",
+            f"-{self.debian}",
+            f"ubuntu{self.ubuntu}",
+            f"~{self.series}.{self.series_revision}" if self.series else "",
+        ]
+        return "".join(parts)
+
+    def replace(
+        self,
+        *,
+        major=None,
+        minor=None,
+        hotfix=None,
+        debian=None,
+        ubuntu=None,
+        series=None,
+        series_revision=None,
+        pre_revision=None,
+        pre_commit=None,
+    ):
+        return VersionInfo(
+            major=major or self.major,
+            minor=minor or self.minor,
+            hotfix=hotfix if hotfix is not None else self.hotfix,
+            debian=debian if debian is not None else self.debian,
+            ubuntu=ubuntu if ubuntu is not None else self.ubuntu,
+            series=series if series is not None else self.series,
+            series_revision=series_revision
+            if series_revision is not None
+            else self.series_revision,
+            pre_revision=pre_revision
+            if pre_revision is not None
+            else self.pre_revision,
+            pre_commit=pre_commit
+            if pre_commit is not None
+            else self.pre_commit,
+        )
+
+    def increment_major_minor_version(self) -> "VersionInfo":
+        """Given a version number, increment and return the major version.
+
+        Examples:
+        22.1 -> 22.2
+        22.2.3 -> 22.3
+        22.3.4~literally-anything -> 22.4
+        22.4 -> 23.1
+        """
+        major = self.major
+        minor = self.minor + 1
+        if minor == 5:
+            major += 1
+            minor = 1
+        return self.replace(major=major, minor=minor)
+
+
 class ChangelogDetails(NamedTuple):
     # This should be cleaner with dataclasses
     source: str
-    version: str
+    version: VersionInfo
     distro: str
     urgency: str
     maintainer: str
@@ -64,7 +188,8 @@ class ChangelogDetails(NamedTuple):
             if line.startswith("Source"):
                 source = line.split(": ")[1]
             elif line.startswith("Version"):
-                version = line.split(": ")[1]
+                version_str = line.split(": ")[1]
+                version = VersionInfo.from_string(version_str)
             elif line.startswith("Distribution"):
                 distro = line.split(": ")[1]
             elif line.startswith("Urgency"):
@@ -334,67 +459,38 @@ def get_bugs_fixed_devel():
             yield line.split("LP: #")[1].strip()
 
 
-def increment_major_version(original: str) -> str:
-    """Given a version number, increment and return the major version.
-
-    Examples:
-    22.1 -> 22.2
-    22.2.3 -> 22.3
-    22.3.4~literally-anything -> 22.4
-    22.4 -> 23.1
-    """
-    split = original.split(".", 1)
-    major = int(split[0])
-    minor = int(split[1][0]) + 1
-    if minor == 5:
-        major += 1
-        minor = 1
-    return f"{major}.{minor}"
-
-
-def update_changelog(
-    commitish,
-    bug,
+def get_new_version(
     changelog_details: ChangelogDetails,
-    is_devel,
-    first_devel_upload,
-):
-    """Update the changelog with the new details.
-
-    Specifically, get the changelog message, determine the new version, then
-    use `dch` to write out a blank message and fill it in ourselves, then
-    commit.. We fill it in ourselves because the `dch` formatting sucks.
-    """
-    print("Updating changelog")
+    commitish: str,
+    commitish_is_upstream_tag: bool,
+    is_devel: bool,
+) -> VersionInfo:
     old_version = changelog_details.version
     previously_unreleased = changelog_details.distro.upper() == "UNRELEASED"
-    commitish_is_upstream_tag = is_commitish_upstream_tag(commitish)
-    next_series_suffix = get_next_series_suffix(old_version)
-
-    msg = get_changelog_message(
-        commitish, bug, commitish_is_upstream_tag, is_devel
-    )
-
-    # Determine new changelog version
-    changelog_version = ""
+    changelog_version: VersionInfo
     if commitish_is_upstream_tag:
+        tag_info = VersionInfo.from_string(commitish)
+
         # Upstream tag always takes priority. For 22.1:
         # 22.1-0ubuntu1 on devel
-        # 22.1-0ubuntu0~22.04.1 on jammy
+        # 22.1-0ubuntu1~22.04.1 on jammy
         if is_devel:
-            if not previously_unreleased or first_devel_upload:
-                changelog_version = f"{commitish}-0ubuntu1"
-        elif next_series_suffix:
+            changelog_version = tag_info.replace(debian=0, ubuntu=1)
+        elif old_version.series:
             # Keep the series suffix, but reset the last incrementing number
-            suffix_parts = next_series_suffix.split(".")
-            suffix_parts[-1] = "1"
-            new_suffix = ".".join(suffix_parts)
-            changelog_version = f"{commitish}-0ubuntu0~{new_suffix}"
+            changelog_version = old_version.replace(
+                major=tag_info.major,
+                minor=tag_info.minor,
+                hotfix=tag_info.hotfix,
+                series_revision=1,
+            )
         else:
             # If it's not devel and it doesn't have a series suffix, then
             # this is the first SRU to a series
             series_number = capture("distro-info --stable -r").stdout.strip()
-            changelog_version = f"{commitish}-0ubuntu0~{series_number}.1"
+            changelog_version = VersionInfo.from_string(
+                f"{commitish}-0ubuntu0~{series_number}.1"
+            )
     elif is_devel:
         # If not an upstream tag, then bump current number. For devel this
         # looks something like:
@@ -406,25 +502,33 @@ def update_changelog(
         git_hash = capture(
             f"git rev-parse --short=8 {commitish}"
         ).stdout.strip()
-        if "~" in old_version:
-            v = old_version
-            increment = int(v[v.find("~") + 1 : v.find("g")]) + 1
-            prefix = old_version.split("~")[0]
+        if old_version.pre_revision:
+            major = old_version.major
+            pre_revision = old_version.pre_revision + 1
+            minor = old_version.minor
         else:
-            upstream_version = old_version.split("-")[0]
-            prefix = increment_major_version(upstream_version)
-            increment = 1
-        changelog_version = f"{prefix}~{increment}g{git_hash}-0ubuntu1"
+            pre_revision = 1
+            incremented = old_version.increment_major_minor_version()
+            major = incremented.major
+            minor = incremented.minor
+        changelog_version = VersionInfo(
+            major=major,
+            minor=minor,
+            pre_revision=pre_revision,
+            pre_commit=git_hash,
+            debian=0,
+            ubuntu=1,
+        )
     elif previously_unreleased:
         # If we our previous snapshot went UNRELEASED, then there's no reason
         # to bump the version number
         changelog_version = old_version
-    elif next_series_suffix:
+    elif old_version.series_revision:
         # If it's not an upstream tag or devel, we're just bumping the suffix
         # E.g.,:
-        # 22.1-0ubuntu0~22.04.1 -> 22.1-0ubuntu0~22.04.2
-        changelog_version = (
-            f"{old_version.rsplit('~')[0]}~{next_series_suffix}"
+        # 22.1-0ubuntu1~22.04.1 -> 22.1-0ubuntu1~22.04.2
+        changelog_version = old_version.replace(
+            series_revision=old_version.series_revision + 1
         )
     else:
         raise CliError(
@@ -432,8 +536,38 @@ def update_changelog(
             "`new_upstream_snapshot.py`. Stopping as version number "
             "is likely to be wrong. "
         )
+    return changelog_version
 
-    dch_command = f"dch --no-multimaint --newversion '{changelog_version}' ' '"
+
+def update_changelog(
+    commitish,
+    bug,
+    changelog_details: ChangelogDetails,
+    is_devel,
+):
+    """Update the changelog with the new details.
+
+    Specifically, get the changelog message, determine the new version, then
+    use `dch` to write out a blank message and fill it in ourselves, then
+    commit.. We fill it in ourselves because the `dch` formatting sucks.
+    """
+    print("Updating changelog")
+    commitish_is_upstream_tag = is_commitish_upstream_tag(commitish)
+
+    msg = get_changelog_message(
+        commitish, bug, commitish_is_upstream_tag, is_devel
+    )
+
+    changelog_version = get_new_version(
+        changelog_details,
+        commitish,
+        commitish_is_upstream_tag,
+        is_devel,
+    )
+
+    dch_command = (
+        f"dch --no-multimaint --newversion '{str(changelog_version)}' ' '"
+    )
     # Add new changelog entry with blank changelog message
     sh(dch_command)
 
@@ -463,42 +597,13 @@ def add_msg_to_changelog(msg):
             f.write(f"{line}\n")
 
 
-def get_next_series_suffix(old_version):
-    """Get the suffix (if it exists) for the next release version
-
-    Any SRUed release should end with <series-number>.x. E.g.
-    1.0-0ubuntu0~10.04.1
-    The series suffix returned would be "10.04.2".
-
-    Devel releases will return None.
-    """
-    if "~" not in old_version:
-        return None  # I.e., it's a devel upload
-    elif old_version.count("~") == 1:
-        old_series_suffix = old_version.split("~")[1]
-        if "." not in old_series_suffix:
-            # Devel has ~ but no series suffix.
-            # E.g., 23.2.1~1g111f1a6e-0ubuntu1
-            return None
-        parts = old_series_suffix.split(".")
-        parts[-1] = str(int(parts[-1]) + 1)
-        return ".".join(parts)
-    else:
-        raise CliError(
-            "Don't know what to do with multiple '~' in version number"
-        )
-
-
 def show_release_steps(changelog_details, devel_distro, is_devel):
     """Because we all like automation telling us to do more things."""
     series = devel_distro if is_devel else changelog_details.distro
     if series.upper() == "UNRELEASED":
         series = get_changelog_distro()
-    new_version = ChangelogDetails.get().version
+    new_version = str(ChangelogDetails.get().version)
     git_branch_name = capture("git rev-parse --abbrev-ref HEAD").stdout.strip()
-    m = re.match(
-        r"^(?P<package_version>\d+\.\d+(\.\d+)?).*", changelog_details.version
-    )
     new_tag = new_version.replace("~", "_")
     if "ubuntu" in new_tag and not new_tag.startswith("ubuntu/"):
         new_tag = f"ubuntu/{new_tag}"
@@ -511,14 +616,19 @@ def show_release_steps(changelog_details, devel_distro, is_devel):
     )
     print(f"git tag {new_tag}")
     print("")
+    last_version = (
+        f"{changelog_details.version.major}.{changelog_details.version.minor}"
+    )
     print(
         "Don't forget to include previously released changelogs from "
-        f"upstream/{git_branch_name}-{m['package_version']}.x!"
+        f"upstream/{git_branch_name}-{last_version}.x!"
     )
 
 
 def get_possible_devel_options(
-    known_first_devel_upload, known_first_sru, changelog_details
+    known_first_devel_upload,
+    known_first_sru,
+    changelog_details: ChangelogDetails,
 ) -> Tuple[str, bool, bool, bool]:
     """Determine if we're on devel and our options for the devel branch.
 
@@ -537,7 +647,7 @@ def get_possible_devel_options(
     if (
         not known_first_devel_upload
         and not known_first_sru
-        and not re.match(r".*~\d+\.\d+\.\d+", changelog_details.version)
+        and not changelog_details.version.series_revision
     ):
         changelog_distro = get_changelog_distro()
         is_devel = True
@@ -621,7 +731,7 @@ def new_upstream_snapshot(
     (
         devel_distro,
         is_devel,
-        first_devel_upload,
+        is_first_devel_upload,
         first_sru,
     ) = get_possible_devel_options(
         known_first_devel_upload=known_first_devel_upload,
@@ -634,7 +744,6 @@ def new_upstream_snapshot(
         bug,
         old_changelog_details,
         is_devel,
-        first_devel_upload,
     )
 
     show_release_steps(old_changelog_details, devel_distro, is_devel)
