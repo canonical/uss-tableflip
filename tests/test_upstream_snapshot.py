@@ -370,7 +370,7 @@ def test_first_sru_to_series(devel_setup, mock_new_sru, capsys):
         UPSTREAM_MAIN_VERSION, no_sru_bug=True, known_first_sru=True
     )
     details = ChangelogDetails.get()
-    assert str(details.version) == f"{UPSTREAM_MAIN_VERSION}-0ubuntu0~10.10.1"
+    assert str(details.version) == f"{UPSTREAM_MAIN_VERSION}-0ubuntu1~10.10.1"
     assert details.distro == "UNRELEASED"
     assert "Bugs fixed in this snapshot" not in details.changes
     assert "List of changes from upstream" in details.changes
