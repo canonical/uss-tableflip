@@ -2,6 +2,8 @@
 
 This is a high level explanation of how we do release versioning and branching on cloud-init.
 
+See also: https://github.com/canonical/ubuntu-maintainers-handbook/blob/main/VersionStrings.md
+
 # Upstream Release Numbers
 (Jumping down to the examples might be more productive than reading these blocks of text)
 
