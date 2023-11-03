@@ -96,6 +96,11 @@ get_genchanges_version() {
         { debug 1 "-v not relevant for devel suite ($suite)"; return 0; }
     [ "${suite^^}" = "UNRELEASED" ] &&
         { debug 1 "-v not relevant for unreleased"; return 0; }
+    case "$suite" in
+        unstable|sid|testing)
+            debug 1 "no genchanges support for debian ($suite): skipping."
+            return 0;;
+    esac
     if ! command -v rmadison >/dev/null 2>&1; then
         debug 1 "rmadison not available."
         return 0
