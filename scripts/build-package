@@ -36,6 +36,10 @@ Usage: ${0##*/} [ options ] <<ARGUMENTS>>
       --ref R         what to build from [default to current branch].
       --offline       perform no upstream orig.tar.gz downloads
     -o | --output D   put output in D. [default ../out]
+
+         --skip-genchanges-version   do not attempt to find the
+                                     correct '-v<version>' flag.
+
 EOF
 }
 
@@ -161,7 +165,7 @@ get_orig_tarball() {
 
 main() {
     local short_opts="ho:vy"
-    local long_opts="help,offline,output:,offset:,ref:,yes,verbose"
+    local long_opts="help,offline,output:,offset:,ref:,skip-genchanges-version:,yes,verbose"
     local getopt_out=""
     getopt_out=$(getopt --name "${0##*/}" \
         --options "${short_opts}" --long "${long_opts}" -- "$@") &&
@@ -169,6 +173,7 @@ main() {
         { bad_Usage; return; }
 
     local cur="" next="" out_d="../out" ref="" offset="0"
+    local do_genchanges_v=true
 
     while [ $# -ne 0 ]; do
         cur="$1"; next="$2";
@@ -176,7 +181,8 @@ main() {
             -h|--help) Usage ; exit 0;;
                --offset) offset=$next; shift;;
             -o|--output) out_d=$next; shift;;
-            --offline) OFFLINE=true;;
+               --offline) OFFLINE=true;;
+               --skip-genchanges-version) do_genchanges_v=false;;
             -v|--verbose) VERBOSITY=$((${VERBOSITY}+1));;
             -y|--yes) ASSUME_YES=true;;
                --ref) ref=$next; shift;;
@@ -339,9 +345,12 @@ main() {
 
     # try to magically add '-v' if its not present.
     local genchanges_v=""
-    get_genchanges_version "$pkg_name" "$suite" " $* " ||
-        fail "Failed to get genchanges version for $pkg_name $suite ' $* '"
-    genchanges_v="$_RET"
+    if [ "${do_genchanges_v}" = "true" ]; then
+        get_genchanges_version "$pkg_name" "$suite" " $* " ||
+            fail "Failed to get genchanges version for $pkg_name $suite ' $* '" \
+            "try with --skip-genchanges-version"
+        genchanges_v="$_RET"
+    fi
 
     if [ $# -eq 0 ]; then
         set -- -d -S -nc ${genchanges_v}
