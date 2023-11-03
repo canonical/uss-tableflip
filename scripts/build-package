@@ -23,6 +23,15 @@ Usage: ${0##*/} [ options ] <<ARGUMENTS>>
 
    build a package, put output in ../out
 
+   By default debuild is invoked to build a source package with:
+       -d -S -nc -v<version>
+   -v<version> is deteremined heuristically for dpkg-genchanges(1).
+
+   If you want to build with other flags, add debuild flags on
+   the cmdline.  For example, to build with -sa:
+
+      ${0##*/} -- -d -S -sa -nc
+
    options:
       --ref R         what to build from [default to current branch].
       --offline       perform no upstream orig.tar.gz downloads
