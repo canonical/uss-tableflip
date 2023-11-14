@@ -12,9 +12,11 @@ Usage: ${0##*/} [ options ] dsc [arch [ release ] ]
    dsc and is required, arch and release are optional with defaults
 
    options:
-    -h | --help             display this message
-         --dry-run          only report what would be done
-         --no-arch-all      do not pass '--arch-all'
+    -h | --help               display this message
+         --dry-run            only report what would be done
+         --no-arch-all        do not pass '--arch-all'
+    -p | --pass-through OPT   pass OPT through to sbuild.
+                              this can be given multiple times
 EOF
 }
 
@@ -34,8 +36,8 @@ rel_from_changes() {
             _RET="${out%-proposed}" || return 1
 }
 
-short_opts="hv"
-long_opts="help,dry-run,chroot:,no-arch-all,verbose"
+short_opts="hvp:"
+long_opts="help,dry-run,chroot:,no-arch-all,verbose,pass-through:"
 getopt_out=$(getopt --name "${0##*/}" \
     --options "${short_opts}" --long "${long_opts}" -- "$@") &&
     eval set -- "${getopt_out}" ||
@@ -57,6 +59,7 @@ ifile=""
 schanges=""
 sbuild="sbuild"
 chroot=""
+pt=( )
 
 while [ $# -ne 0 ]; do
     cur=${1}; next=${2};
@@ -65,6 +68,7 @@ while [ $# -ne 0 ]; do
            --dry-run) dry_run=1;;
            --no-arch-all) arch_all="";;
            --chroot) chroot=$next; shift;;
+        -p|--pass-through) pt[${#pt[@]}]="$next"; shift;;
         -v|--verbose) VERBOSITY=$((${VERBOSITY}+1));;
         --) shift; break;;
     esac
@@ -153,9 +157,10 @@ case "$rel" in
         ;;
 esac
 
-debug 0 "$sbuild --dist=${rel} --arch=${arch}${chroot:+ --chroot=$chroot} ${arch_all:+ ${arch_all}} $dsc"
+set -- $sbuild "${pt[@]}" "--dist=${rel}" "--arch=${arch}" ${chroot:+"--chroot=$chroot"} ${arch_all:+"${arch_all}"} "$dsc"
+debug 0 "execute:" "$@"
 [ $dry_run -eq 0 ] || exit 0
 # --resolve-alternatives is used by the buildd systems
-exec $sbuild --resolve-alternatives ${chroot:+"--chroot=${chroot}"} "--dist=${rel}" "--arch=${arch}" ${arch_all} "$dsc"
+"$@"
 
 # vi: ts=4 expandtab
