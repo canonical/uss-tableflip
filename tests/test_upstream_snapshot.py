@@ -29,6 +29,11 @@ def new_capture(devel_series, stable_number, *args, **kwargs):
         return CompletedProcess(args[0], 0, stdout=devel_series)
     elif args[0] == "distro-info --stable -r":
         return CompletedProcess(args[0], 0, stdout=stable_number)
+    elif (
+        args[0].startswith("git diff --name-only")
+        and "debian/patches/" not in args[0]
+    ):
+        return CompletedProcess(args[0], 0, stdout="")
     return capture(*args, **kwargs)
 
 
