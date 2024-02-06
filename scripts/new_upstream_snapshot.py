@@ -295,7 +295,10 @@ def drop_cpicks(commitish):
             f"drop cherry picks included in {commitish}.\n\n"
             "drop the following cherry picks:\n" + "\n".join(dropped_cpicks)
         )
-        sh(f"git add debian/patches && git commit -m '{commit_msg}'")
+        sh(
+            "git add debian/patches && git commit --no-verify "
+            f"-m '{commit_msg}'"
+        )
 
 
 def refresh_patches(commitish) -> bool:
@@ -345,7 +348,7 @@ def refresh_patches(commitish) -> bool:
             f"refresh patches against {commitish}\n\n"
             f"patches: \n" + "\n".join(patches)
         )
-        sh(f"git commit -m '{commit_msg}' {' '.join(patches)}")
+        sh(f"git commit --no-verify -m '{commit_msg}' {' '.join(patches)}")
         return True
     else:
         print("No patches needed refresh")
@@ -580,7 +583,7 @@ def update_changelog(
 
     # Commit the changelog
     sh(
-        "git commit -m 'update changelog (new upstream snapshot)' "
+        "git commit --no-verify -m 'update changelog (new upstream snapshot)' "
         "debian/changelog"
     )
 
