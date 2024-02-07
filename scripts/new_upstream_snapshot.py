@@ -339,20 +339,24 @@ def refresh_patches(commitish) -> bool:
     if rc not in [0, 2]:  # 2 means there were no quilt patches to pop
         raise CliError(f"'quilt pop -a' unexpectedly returned {rc}.")
 
-    # Now commit the refreshed patches
+    # Now commit the refreshed patches and add to changelog
     patches = capture(
         "git diff --name-only debian/patches/", check=False
     ).stdout.splitlines()
-    if patches:
-        commit_msg = (
-            f"refresh patches against {commitish}\n\n"
-            f"patches: \n" + "\n".join(patches)
-        )
-        sh(f"git commit --no-verify -m '{commit_msg}' {' '.join(patches)}")
-        return True
-    else:
+    if not patches:
         print("No patches needed refresh")
         return False
+    
+    commit_msg = (
+        f"refresh patches against {commitish}\n\n"
+        f"patches: \n" + "\n".join(patches)
+    )
+    sh(f"git commit --no-verify -m '{commit_msg}' {' '.join(patches)}")
+    patch_texts = [p.replace("debian/patches/", "d/p/") for p in patches]
+    patch_lines = "\n    - ".join(patch_texts)
+    add_msg_to_changelog(f"  * refresh patches:\n    - {patch_lines}")
+    return True
+
 
 
 def is_commitish_upstream_tag(commitish):
@@ -572,14 +576,8 @@ def update_changelog(
         is_devel,
     )
 
-    dch_command = (
-        f"dch --no-multimaint --newversion '{str(changelog_version)}' ' '"
-    )
-    # Add new changelog entry with blank changelog message
-    sh(dch_command)
-
     # Fill in the changelog message
-    add_msg_to_changelog(msg)
+    add_msg_to_changelog(msg, changelog_version=changelog_version)
 
     # Commit the changelog
     sh(
@@ -588,8 +586,21 @@ def update_changelog(
     )
 
 
-def add_msg_to_changelog(msg):
-    """`dch` added an empty changelog message, now fill it in."""
+def add_msg_to_changelog(
+    msg, *, changelog_version: Optional[VersionInfo] = None
+):
+    """Add a new message to the changelog.
+
+    We do this roundabout way of calling dch and then manually editing the
+    file because dch doesn't allow for newlines in the message. Instead,
+    use dch to give us a placeholder and then manually insert our message
+    """
+    version_string = (
+        f"--newversion '{str(changelog_version)}'" if changelog_version else ""
+    )
+    dch_command = f"dch --no-multimaint {version_string} ' '"
+    sh(dch_command)
+
     changelog_path = Path("debian/changelog")
     changelog = changelog_path.read_text()
     if changelog.count("  *\n") != 1:
