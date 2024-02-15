@@ -318,6 +318,7 @@ def refresh_patches(commitish) -> bool:
     :return: True when patches were refreshed
     """
     print("Attempting to automatically refresh quilt patches")
+    did_push = False
     try:
         while (
             sh(f"{QUILT_COMMAND} next", check=False, env=QUILT_ENV).returncode
@@ -325,6 +326,7 @@ def refresh_patches(commitish) -> bool:
         ):
             sh(f"{QUILT_COMMAND} push", env=QUILT_ENV)
             sh(f"{QUILT_COMMAND} refresh", env=QUILT_ENV)
+            did_push = True
     except CalledProcessError as e:
         failed_patch = capture(
             f"{QUILT_COMMAND} next", env=QUILT_ENV
@@ -335,9 +337,12 @@ def refresh_patches(commitish) -> bool:
             "'quilt push -a && quilt pop -a' rerun this script with "
             "'--post quilt' argument."
         ) from e
-    rc = sh(f"{QUILT_COMMAND} pop -a", check=False, env=QUILT_ENV).returncode
-    if rc not in [0, 2]:  # 2 means there were no quilt patches to pop
-        raise CliError(f"'quilt pop -a' unexpectedly returned {rc}.")
+    if did_push:
+        rc = sh(f"{QUILT_COMMAND} pop -a", check=False, env=QUILT_ENV).returncode
+        if rc not in [0, 2]:  # 2 means there were no quilt patches to pop
+            # if push fails due to missing series file, pop will too
+            # ignore this case
+            raise CliError(f"'quilt pop -a' unexpectedly returned {rc}.")
 
     # Now commit the refreshed patches and add to changelog
     patches = capture(
