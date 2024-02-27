@@ -97,6 +97,9 @@ $ gpg --sign --armor --detach-sig cloud-init-<version>.tar.gz
 ```
 
 ## Create release in Launchpad
+**IF YOU ARE UPLOADING A HOTFIX RELEASE, DON'T CREATE AN ENTIRELY NEW MILESTONE AND PAGE.
+RATHER, JUST UPLOAD A NEW TARBALL AND SIGNATURE TO THE EXISTING RELEASE PAGE.**
+
 Example of a finished release: https://launchpad.net/cloud-init/trunk/21.3
 
 ### Option 1: Script
