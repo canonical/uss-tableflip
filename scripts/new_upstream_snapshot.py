@@ -133,7 +133,7 @@ class VersionInfo:
         return VersionInfo(
             major=major or self.major,
             minor=minor or self.minor,
-            hotfix=hotfix if hotfix is not None else self.hotfix,
+            hotfix=hotfix if hotfix or any((major, minor)) else self.hotfix,
             debian=debian if debian is not None else self.debian,
             ubuntu=ubuntu if ubuntu is not None else self.ubuntu,
             series=series if series is not None else self.series,
