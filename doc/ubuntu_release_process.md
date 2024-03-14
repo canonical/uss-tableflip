@@ -188,49 +188,6 @@ If there were a number of releases that were missed you could do
     $ versions="0.7.9-233-ge586fe35-0ubuntu1~16.04.1 0.7.9-233-ge586fe35-0ubuntu1~16.04.2"
     $ for ver in $versions; do git-import-dsc cloud-init $ver; done
 
-
-## Daily packaging recipes and ppa ##
-We have daily packaging recipes that upload to the [daily ppa](https://code.launchpad.net/~cloud-init-dev/+archive/ubuntu/daily).  These build Ubuntu packaging on top of main.  This differs from main built for the given Ubuntu release because the Ubuntu release may have patches applied. The recipes can be found [here](https://code.launchpad.net/~cloud-init-dev/+recipes)
-
-### When the daily recipe build fails ###
-
-The daily recipe for each release checks out main, merges the
-ubuntu/$release branch, and builds the package from
-there.  From time to time, the patches in the
-ubuntu/$release branch need to be refreshed/updated, or we need
-to provide an upstream snapshot as upstream/main changes.
-
-This is typically done during the new_upstream_snapshot.py tool process, however,
-new commits to main can break the patches. If a commit to main touches any file
-that has a patch in the debian/patches directory, we'll likely get a
-merge conflict.
-
-When you upstream snapshot, this will fail when quilt
-cannot apply the patch. The tool will bail, and it is now up to you to manually
-refresh any quilt patches.  The source of the issue is that the release
-branch needs the upstream changes to ensure the patch still applies.
-Follow the "Adding a quilt patch to debian/patches" instructions above to
-fix the issue, then run `new_upstream_snapshot.py --post-stage=quilt`.
-
-> **Note**: After refreshing the patches against the source code in
-  upstream/main, it is most likely that the patches won't be applicable to the
-  source code in the previous package during `build-package` time.
-  More context on:
-  [cloud-init #2117](https://github.com/canonical/cloud-init/pull/2117#issuecomment-1508151851)
-
-To verify this fixes things for the daily build.
-
-    $ quilt push -a
-    $ tox -p auto
-    $ quilt pop -a
-
-With the patch passing verification, push this branch up for review:
-
-    git push <user github repo> ubuntu/$release
-
-In the github UI, make sure the proposal is pointing to ubuntu/$release
-rather than main.
-
 ## Links ##
 
 * [SRU Exception Doc](https://wiki.ubuntu.com/CloudinitUpdates)
