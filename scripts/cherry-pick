@@ -93,6 +93,14 @@ run_quilt() {
         quilt --quiltrc - "$@"
 }
 
+post_message() {
+    echo ""
+    echo "If this cherry-pick is due to a bug to be SRU'ed, also add to the DEP-3 header:
+    Bug: <reference to GH issue>
+    Bug-Ubuntu: <reference to LP issue>
+    "
+}
+
 main() {
     local short_opts="ho:v:y"
     local long_opts="help,verbose,yes"
@@ -196,7 +204,7 @@ main() {
         read answer || fail "failed to read answer"
     fi
     case "$answer" in
-        n|[Nn][oO]) exit 1;;
+        n|[Nn][oO]) post_message && exit 1;;
     esac
 
     bugs=$(git_log_to_dch print_bugs < "$fpath")
@@ -205,12 +213,16 @@ main() {
         { error "failed to git add $series $fpath"; return 1; }
 
     git commit -m "$msg" "${commit_files[@]}" ||
-        fail "failed to commit '$msg'"
+        error "failed to commit '$msg'" &&
+        post_message &&
+        exit 1
 
     git commit -m "update changelog" debian/changelog ||
-        fail "failed to commit update to debian changelog."
+        error "failed to commit update to debian changelog." &&
+        post_message &&
+        exit 1
 
-    return 0
+    post_message
 }
 
 main "$@"
