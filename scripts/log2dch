@@ -214,9 +214,9 @@ git_log_to_dch() {
                 ;;
             Author:*) author="${line#Author: }";;
             LP:*) bug_tracker="LP"; bugs="${bugs:+${bugs}, }${line#*: }";;
-            Fixes:*|Closes:*)
+            Fixes\ GH*|Closes\ GH*)
                 bug_tracker="GH";
-                bug="${line#*: }";
+                bug="${line#*\ GH-}";
                 [ ! -z "${bug##*[!0-9]*}" ] && bugs="${bugs:+${bugs}, }$bug";;
             "") [ -z "$subject" ] && read -r subject;;
         esac
