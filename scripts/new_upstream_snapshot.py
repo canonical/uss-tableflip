@@ -662,7 +662,10 @@ def get_possible_devel_options(
     """
     is_devel = is_first_devel_upload = known_first_devel_upload
     is_first_sru = known_first_sru
-    devel_distro = capture("distro-info --devel").stdout.strip()
+    try:
+        devel_distro = capture("distro-info --devel").stdout.strip()
+    except Exception:
+        devel_distro = "UNKNOWN"
     if is_first_devel_upload and is_first_sru:
         raise CliError(
             "Can't simultaneously be first SRU and first devel upload"
