@@ -26,7 +26,7 @@ sh = partial(subprocess.run, check=True, shell=True)
 capture = partial(sh, capture_output=True, universal_newlines=True)
 
 QUILT_COMMAND = "quilt --quiltrc -"
-QUILT_DIFF_ARGS = "-p ab --no-timestamps --no-index"
+QUILT_DIFF_ARGS = "-p ab --no-timestamps --no-index --sort"
 QUILT_ENV = {
     "QUILT_PATCHES": "debian/patches",
     "QUILT_DIFF_OPTS": "-p",
