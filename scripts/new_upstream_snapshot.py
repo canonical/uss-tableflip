@@ -261,9 +261,23 @@ def merge_commitish(to: str) -> None:
 
     if to == "upstream/main":
         capture("git fetch upstream")
-    command = f'git merge {to} -m "merge from {to} at {ref_name}"'
+    command = (
+        f"git merge --strategy-option=theirs {to} "
+        f'-m "merge from {to} at {ref_name}"'
+    )
     print(f"Running: {command}")
     capture(command)
+
+    # Ensure that our merge strategy didn't do anything unexpected
+    for entry in (
+        capture(f"git diff --name-only {to}").stdout.strip().splitlines()
+    ):
+        if not entry.startswith("debian/"):
+            raise CliError(
+                "Merge resulted in change to upstream code. "
+                "Fix the merge and rerun this script with "
+                "'--post merge' argument."
+            )
 
 
 def drop_cpicks(commitish):
