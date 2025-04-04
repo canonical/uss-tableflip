@@ -335,7 +335,7 @@ def refresh_patches(commitish) -> bool:
             f"Failed applying patch '{failed_patch}'. Patch must be refreshed "
             "manually. When you can successfully "
             "'quilt push -a && quilt pop -a' rerun this script with "
-            "'--post quilt' argument."
+            "'--post merge' argument."
         ) from e
     if did_push:
         rc = sh(f"{QUILT_COMMAND} pop -a", check=False, env=QUILT_ENV).returncode
