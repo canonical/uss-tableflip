@@ -67,7 +67,7 @@ if [ "$RESP" = "y" ]; then
   sed -i "s/${PREVIOUS_MAJOR_MINOR}[.0-9]*/$RELEASE_MAJOR_MINOR/" meson.build
   git diff
   cat > commit.msg <<EOF
-Release $RELEASE_MAJOR_MINOR
+chore: release $RELEASE_MAJOR_MINOR
 
 Bump the version in meson.build to $RELEASE_MAJOR_MINOR and update ChangeLog.
 EOF
