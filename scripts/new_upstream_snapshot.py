@@ -22,6 +22,8 @@ from pathlib import Path
 from subprocess import CalledProcessError
 from typing import NamedTuple, Optional, Tuple
 
+import changelog_check
+
 sh = partial(subprocess.run, check=True, shell=True)
 capture = partial(sh, capture_output=True, universal_newlines=True)
 
@@ -108,9 +110,11 @@ class VersionInfo:
         parts = [
             f"{self.major}.{self.minor}",
             f".{self.hotfix}" if self.hotfix else "",
-            f"~{self.pre_revision}g{self.pre_commit}"
-            if self.pre_revision
-            else "",
+            (
+                f"~{self.pre_revision}g{self.pre_commit}"
+                if self.pre_revision
+                else ""
+            ),
             f"-{self.debian}",
             f"ubuntu{self.ubuntu}",
             f"~{self.series}.{self.series_revision}" if self.series else "",
@@ -137,15 +141,17 @@ class VersionInfo:
             debian=debian if debian is not None else self.debian,
             ubuntu=ubuntu if ubuntu is not None else self.ubuntu,
             series=series if series is not None else self.series,
-            series_revision=series_revision
-            if series_revision is not None
-            else self.series_revision,
-            pre_revision=pre_revision
-            if pre_revision is not None
-            else self.pre_revision,
-            pre_commit=pre_commit
-            if pre_commit is not None
-            else self.pre_commit,
+            series_revision=(
+                series_revision
+                if series_revision is not None
+                else self.series_revision
+            ),
+            pre_revision=(
+                pre_revision if pre_revision is not None else self.pre_revision
+            ),
+            pre_commit=(
+                pre_commit if pre_commit is not None else self.pre_commit
+            ),
         )
 
     def increment_major_minor_version(self) -> "VersionInfo":
@@ -355,7 +361,9 @@ def refresh_patches(commitish) -> bool:
             "'--post merge' argument."
         ) from e
     if did_push:
-        rc = sh(f"{QUILT_COMMAND} pop -a", check=False, env=QUILT_ENV).returncode
+        rc = sh(
+            f"{QUILT_COMMAND} pop -a", check=False, env=QUILT_ENV
+        ).returncode
         if rc not in [0, 2]:  # 2 means there were no quilt patches to pop
             # if push fails due to missing series file, pop will too
             # ignore this case
@@ -368,7 +376,7 @@ def refresh_patches(commitish) -> bool:
     if not patches:
         print("No patches needed refresh")
         return False
-    
+
     commit_msg = (
         f"refresh patches against {commitish}\n\n"
         f"patches: \n" + "\n".join(patches)
@@ -378,7 +386,6 @@ def refresh_patches(commitish) -> bool:
     patch_lines = "\n    - ".join(patch_texts)
     add_msg_to_changelog(f"  * refresh patches:\n    - {patch_lines}")
     return True
-
 
 
 def is_commitish_upstream_tag(commitish):
@@ -643,7 +650,6 @@ def show_release_steps(changelog_details, devel_distro, is_devel):
     if series.upper() == "UNRELEASED":
         series = get_changelog_distro()
     new_version = str(ChangelogDetails.get().version)
-    git_branch_name = capture("git rev-parse --abbrev-ref HEAD").stdout.strip()
     new_tag = new_version.replace("~", "_")
     if "ubuntu" in new_tag and not new_tag.startswith("ubuntu/"):
         new_tag = f"ubuntu/{new_tag}"
@@ -655,14 +661,6 @@ def show_release_steps(changelog_details, devel_distro, is_devel):
         "debian/changelog"
     )
     print(f"git tag {new_tag}")
-    print("")
-    last_version = (
-        f"{changelog_details.version.major}.{changelog_details.version.minor}"
-    )
-    print(
-        "Don't forget to include previously released changelogs from "
-        f"upstream/{git_branch_name}-{last_version}.x!"
-    )
 
 
 def get_possible_devel_options(
@@ -738,6 +736,32 @@ def get_sru_bug(bug, no_sru_bug):
     return bug
 
 
+def run_changelog_check():
+    """Run changelog_check for the current series and print results if not up to date."""
+    series = get_changelog_distro()
+    try:
+        is_up_to_date, diff_output = changelog_check.changelog_up_to_date(
+            series
+        )
+        if is_up_to_date:
+            print(f"Changelog is up to date for series '{series}'.")
+        else:
+            print(
+                "\nWARNING: Changelog is not up to date for series '",
+                series,
+                "'.",
+            )
+            print(diff_output)
+            print(
+                "\nPlease incorporate previously released changelog entries from Ubuntu into your branch before release."
+            )
+    except Exception as e:
+        print(f"\nWARNING: Changelog check failed: {e}")
+        print(
+            "\nPlease incorporate previously released changelog entries from Ubuntu into your branch before release."
+        )
+
+
 def new_upstream_snapshot(
     commitish: str,
     bug: Optional[str] = None,
@@ -790,6 +814,8 @@ def new_upstream_snapshot(
     )
 
     show_release_steps(old_changelog_details, devel_distro, is_devel)
+    # Run changelog check at the end, but do not stop execution if it fails
+    run_changelog_check()
 
 
 def parse_args() -> argparse.Namespace:
